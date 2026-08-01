@@ -23,6 +23,21 @@ def split_headers_body(raw: str) -> tuple[str, str]:
     return head, body
 
 
+def redact_raw(raw: str) -> str:
+    """Redact sensitive header values in a raw HTTP message, keep the body."""
+    if not raw:
+        return ""
+    head, body = split_headers_body(raw)
+    out_lines = []
+    for line in head.split("\n"):
+        if ":" in line:
+            name = line.split(":", 1)[0].strip().lower()
+            if name in SENSITIVE_HEADERS:
+                line = f"{line.split(':', 1)[0]}: {REDACTED}"
+        out_lines.append(line)
+    return "\n".join(out_lines) + ("\n\n" + body if body else "")
+
+
 def _parse_headers(lines: list[str]) -> dict[str, str]:
     headers: dict[str, str] = {}
     for line in lines:
@@ -49,6 +64,21 @@ def _body_shape(body: str, content_type: str) -> dict:
         except json.JSONDecodeError:
             pass
     return {"type": content_type or "unknown", "length": len(body)}
+
+
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.I | re.S)
+
+
+def extract_title(body: str) -> str:
+    """Pull the <title> text out of an HTML response body (max 200 chars)."""
+    if not body:
+        return ""
+    m = _TITLE_RE.search(body)
+    if not m:
+        return ""
+    title = re.sub(r"<[^>]+>", "", m.group(1))
+    title = re.sub(r"\s+", " ", title).strip()
+    return title[:200]
 
 
 def parse_request(raw: str) -> dict:
@@ -121,6 +151,7 @@ def parse_response(raw: str, include_body: bool = False) -> dict:
         "redirect_location": location,
         "redirect_target_host": redirect_target_host,
         "headers": _redact_headers(headers),
+        "title": extract_title(body) if "html" in content_type.lower() else "",
     }
     if include_body:
         payload["body"] = body

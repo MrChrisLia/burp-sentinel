@@ -14,6 +14,8 @@ from threading import Lock
 from typing import Iterator
 from urllib.parse import urlparse
 
+from hermes_api import parser
+
 
 class Store:
     def __init__(self, db_path: str) -> None:
@@ -183,6 +185,38 @@ class Store:
                     FOREIGN KEY(app_id) REFERENCES apps(id)
                 );
 
+                CREATE TABLE IF NOT EXISTS page_titles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    app_id INTEGER NOT NULL,
+                    host TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    seen_count INTEGER NOT NULL DEFAULT 1,
+                    UNIQUE(app_id, host, path),
+                    FOREIGN KEY(app_id) REFERENCES apps(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS traffic (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    app_id INTEGER NOT NULL,
+                    host TEXT NOT NULL,
+                    method TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    query_string TEXT NOT NULL DEFAULT '',
+                    status_code INTEGER,
+                    content_type TEXT NOT NULL DEFAULT '',
+                    request TEXT NOT NULL DEFAULT '',
+                    response TEXT NOT NULL DEFAULT '',
+                    binary_response INTEGER NOT NULL DEFAULT 0,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    seen_count INTEGER NOT NULL DEFAULT 1,
+                    UNIQUE(app_id, method, host, path),
+                    FOREIGN KEY(app_id) REFERENCES apps(id)
+                );
+
                 CREATE TABLE IF NOT EXISTS js_findings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     app_id INTEGER NOT NULL,
@@ -239,9 +273,201 @@ class Store:
             conn.execute("DELETE FROM business_objects WHERE app_id = ?", (app_id,))
             conn.execute("DELETE FROM endpoints WHERE app_id = ?", (app_id,))
             conn.execute("DELETE FROM domain_relationships WHERE app_id = ?", (app_id,))
+            conn.execute("DELETE FROM page_titles WHERE app_id = ?", (app_id,))
+            conn.execute("DELETE FROM traffic WHERE app_id = ?", (app_id,))
             conn.execute("DELETE FROM domains WHERE app_id = ?", (app_id,))
             conn.execute("DELETE FROM apps WHERE id = ?", (app_id,))
             return True
+
+    def list_hosts(self, scope_name: str) -> list[dict]:
+        with self._lock, self._conn() as conn:
+            app_id = self._app_id(conn, scope_name)
+            rows = conn.execute(
+                "SELECT host, classification, in_scope FROM domains WHERE app_id = ? ORDER BY host",
+                (app_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def set_hosts_in_scope(self, scope_name: str, hosts: list[str], in_scope: bool, exclusive: bool = False) -> int:
+        with self._lock, self._conn() as conn:
+            app_id = self._app_id(conn, scope_name)
+            if not hosts:
+                return 0
+            placeholders = ",".join("?" for _ in hosts)
+            cur = conn.execute(
+                f"UPDATE domains SET in_scope = ? WHERE app_id = ? AND host IN ({placeholders})",
+                [1 if in_scope else 0, app_id, *hosts],
+            )
+            if exclusive:
+                # Mirror the extension's domain filter: everything NOT in the
+                # list gets the opposite flag.
+                conn.execute(
+                    f"UPDATE domains SET in_scope = ? WHERE app_id = ? AND host NOT IN ({placeholders})",
+                    [0 if in_scope else 1, app_id, *hosts],
+                )
+            return cur.rowcount
+
+    def record_page_title(self, scope_name: str, host: str, path: str, title: str) -> None:
+        if not host or not title:
+            return
+        with self._lock, self._conn() as conn:
+            app_id = self._app_id(conn, scope_name)
+            now = self._now()
+            conn.execute(
+                """
+                INSERT INTO page_titles (app_id, host, path, title, first_seen, last_seen, seen_count)
+                VALUES (?, ?, ?, ?, ?, ?, 1)
+                ON CONFLICT(app_id, host, path) DO UPDATE SET
+                    title = excluded.title,
+                    last_seen = excluded.last_seen,
+                    seen_count = seen_count + 1
+                """,
+                (app_id, host, path, title, now, now),
+            )
+
+    _TRAFFIC_RESPONSE_CAP = 200_000
+    _TRAFFIC_REQUEST_CAP = 50_000
+    _BINARY_CONTENT_TYPES = (
+        "image/", "font/", "video/", "audio/", "application/octet-stream",
+        "application/pdf", "application/zip", "application/gzip", "application/x-",
+    )
+
+    def record_traffic(
+        self,
+        scope_name: str,
+        host: str,
+        method: str,
+        path: str,
+        query_string: str,
+        status_code: int | None,
+        content_type: str,
+        request_raw: str,
+        response_raw: str,
+    ) -> None:
+        """Store one redacted request/response pair, deduped per endpoint path."""
+        if not host:
+            return
+        with self._lock, self._conn() as conn:
+            app_id = self._app_id(conn, scope_name)
+            now = self._now()
+            ctype = (content_type or "").lower()
+            binary = int(any(ctype.startswith(p) for p in self._BINARY_CONTENT_TYPES))
+            request = parser.redact_raw(request_raw)[: self._TRAFFIC_REQUEST_CAP]
+            if binary:
+                response = ""
+            else:
+                response = parser.redact_raw(response_raw)[: self._TRAFFIC_RESPONSE_CAP]
+            conn.execute(
+                """
+                INSERT INTO traffic (
+                    app_id, host, method, path, query_string, status_code, content_type,
+                    request, response, binary_response, first_seen, last_seen, seen_count
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                ON CONFLICT(app_id, method, host, path) DO UPDATE SET
+                    query_string = excluded.query_string,
+                    status_code = excluded.status_code,
+                    content_type = excluded.content_type,
+                    request = excluded.request,
+                    response = excluded.response,
+                    binary_response = excluded.binary_response,
+                    last_seen = excluded.last_seen,
+                    seen_count = seen_count + 1
+                """,
+                (
+                    app_id, host, method, path, query_string[:500], status_code, ctype,
+                    request, response, binary, now, now,
+                ),
+            )
+
+    def search_traffic(
+        self,
+        scope_name: str,
+        host: str | None = None,
+        path_contains: str | None = None,
+        limit: int = 6,
+    ) -> list[dict]:
+        """Recent in-scope traffic, optionally filtered by host and path text."""
+        with self._lock, self._conn() as conn:
+            app_id = self._app_id(conn, scope_name)
+            sql = (
+                "SELECT host, method, path, query_string, status_code, content_type, "
+                "request, response, binary_response, last_seen, seen_count "
+                "FROM traffic WHERE app_id = ? "
+                "AND host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1)"
+            )
+            params: list = [app_id, app_id]
+            if host:
+                sql += " AND host = ?"
+                params.append(host)
+            if path_contains:
+                sql += " AND path LIKE ?"
+                params.append(f"%{path_contains}%")
+            sql += " ORDER BY last_seen DESC LIMIT ?"
+            params.append(limit)
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def host_context(self, scope_name: str, host: str) -> dict | None:
+        """Per-host detail for chat focus. Returns None if the host is not
+        an in-scope domain of this app."""
+        host = (host or "").strip().lower()
+        if not host:
+            return None
+        with self._lock, self._conn() as conn:
+            app_id = self._app_id(conn, scope_name)
+            row = conn.execute(
+                "SELECT id FROM domains WHERE app_id = ? AND host = ? AND in_scope = 1",
+                (app_id, host),
+            ).fetchone()
+            if not row:
+                return None
+            endpoints = conn.execute(
+                """
+                SELECT method, host, path, normalized_path, feature, risk_score, seen_count, last_seen
+                FROM endpoints WHERE app_id = ? AND host = ?
+                ORDER BY risk_score DESC, last_seen DESC
+                LIMIT 40
+                """,
+                (app_id, host),
+            ).fetchall()
+            pages = conn.execute(
+                "SELECT host, path, title, last_seen FROM page_titles WHERE app_id = ? AND host = ? ORDER BY last_seen DESC LIMIT 10",
+                (app_id, host),
+            ).fetchall()
+            return {
+                "host": host,
+                "endpoint_count": len(endpoints),
+                "endpoints": [dict(x) for x in endpoints],
+                "recent_pages": [dict(x) for x in pages],
+            }
+
+    def most_recent_host(self, scope_name: str) -> str | None:
+        """Host of the most recently viewed in-scope page (fallback: most
+        recently seen endpoint host)."""
+        with self._lock, self._conn() as conn:
+            app_id = self._app_id(conn, scope_name)
+            row = conn.execute(
+                """
+                SELECT host FROM page_titles
+                WHERE app_id = ?
+                  AND host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1)
+                ORDER BY last_seen DESC LIMIT 1
+                """,
+                (app_id, app_id),
+            ).fetchone()
+            if row:
+                return row["host"]
+            row = conn.execute(
+                """
+                SELECT host FROM endpoints
+                WHERE app_id = ?
+                  AND host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1)
+                ORDER BY last_seen DESC LIMIT 1
+                """,
+                (app_id, app_id),
+            ).fetchone()
+            return row["host"] if row else None
 
     def list_scopes(self) -> list[dict]:
         with self._lock, self._conn() as conn:
@@ -255,7 +481,8 @@ class Store:
                     COUNT(DISTINCT d.host) AS host_count
                 FROM apps a
                 LEFT JOIN endpoints e ON e.app_id = a.id
-                LEFT JOIN domains d ON d.app_id = a.id
+                    AND e.host IN (SELECT host FROM domains WHERE app_id = a.id AND in_scope = 1)
+                LEFT JOIN domains d ON d.app_id = a.id AND d.in_scope = 1
                 GROUP BY a.id
                 ORDER BY a.updated_at DESC
                 """
@@ -685,29 +912,33 @@ class Store:
         with self._lock, self._conn() as conn:
             app_id = self._app_id(conn, scope_name)
             endpoints = conn.execute(
-                "SELECT method, host, path, normalized_path, feature, workflow, risk_score, auth_observed FROM endpoints WHERE app_id = ?",
-                (app_id,),
+                "SELECT method, host, path, normalized_path, feature, workflow, risk_score, auth_observed FROM endpoints WHERE app_id = ? "
+                "AND host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1)",
+                (app_id, app_id),
             ).fetchall()
             discovered_routes = conn.execute(
-                "SELECT route, route_type, host, normalized_path, observed_in_proxy FROM discovered_routes WHERE app_id = ?",
-                (app_id,),
+                "SELECT route, route_type, host, normalized_path, observed_in_proxy FROM discovered_routes WHERE app_id = ? "
+                "AND host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1)",
+                (app_id, app_id),
             ).fetchall()
             objects = conn.execute(
                 "SELECT name FROM business_objects WHERE app_id = ? ORDER BY name",
                 (app_id,),
             ).fetchall()
             redirects = conn.execute(
-                "SELECT source_host, source_path, status_code, location, target_host, seen_count FROM redirect_events WHERE app_id = ? ORDER BY last_seen DESC",
-                (app_id,),
+                "SELECT source_host, source_path, status_code, location, target_host, seen_count FROM redirect_events WHERE app_id = ? "
+                "AND source_host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1) ORDER BY last_seen DESC",
+                (app_id, app_id),
             ).fetchall()
             js_findings = conn.execute(
                 """
                 SELECT source_host, source_path, finding_type, category, indicator, confidence, evidence, seen_count
                 FROM js_findings
                 WHERE app_id = ?
+                  AND source_host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1)
                 ORDER BY seen_count DESC, id DESC
                 """,
-                (app_id,),
+                (app_id, app_id),
             ).fetchall()
             return {
                 "endpoints": [dict(x) for x in endpoints],
@@ -721,12 +952,14 @@ class Store:
         with self._lock, self._conn() as conn:
             app_id = self._app_id(conn, scope_name)
             domains = conn.execute(
-                "SELECT host, classification FROM domains WHERE app_id = ? ORDER BY host",
+                "SELECT host, classification FROM domains WHERE app_id = ? AND in_scope = 1 ORDER BY host",
                 (app_id,),
             ).fetchall()
             endpoints = conn.execute(
-                "SELECT method, normalized_path, feature, risk_score FROM endpoints WHERE app_id = ? ORDER BY risk_score DESC",
-                (app_id,),
+                "SELECT method, host, normalized_path, feature, risk_score FROM endpoints WHERE app_id = ? "
+                "AND host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1) "
+                "ORDER BY risk_score DESC",
+                (app_id, app_id),
             ).fetchall()
             objects = conn.execute(
                 "SELECT name FROM business_objects WHERE app_id = ? ORDER BY name",
@@ -737,21 +970,47 @@ class Store:
                 (app_id,),
             ).fetchall()
             unobserved = conn.execute(
-                "SELECT route FROM discovered_routes WHERE app_id = ? AND observed_in_proxy = 0 ORDER BY route",
-                (app_id,),
+                "SELECT route FROM discovered_routes WHERE app_id = ? AND observed_in_proxy = 0 "
+                "AND host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1) ORDER BY route",
+                (app_id, app_id),
             ).fetchall()
             redirects = conn.execute(
-                "SELECT target_host FROM redirect_events WHERE app_id = ? ORDER BY id",
-                (app_id,),
+                "SELECT target_host FROM redirect_events WHERE app_id = ? "
+                "AND source_host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1) ORDER BY id",
+                (app_id, app_id),
             ).fetchall()
             js_findings = conn.execute(
                 """
                 SELECT finding_type, category, indicator, source_host, source_path
                 FROM js_findings
                 WHERE app_id = ?
+                  AND source_host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1)
                 ORDER BY seen_count DESC, id DESC
                 """,
-                (app_id,),
+                (app_id, app_id),
+            ).fetchall()
+
+            recent_pages = conn.execute(
+                """
+                SELECT host, path, title, last_seen
+                FROM page_titles
+                WHERE app_id = ?
+                  AND host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1)
+                ORDER BY last_seen DESC
+                LIMIT 20
+                """,
+                (app_id, app_id),
+            ).fetchall()
+            recent_endpoints = conn.execute(
+                """
+                SELECT method, host, path, last_seen
+                FROM endpoints
+                WHERE app_id = ?
+                  AND host IN (SELECT host FROM domains WHERE app_id = ? AND in_scope = 1)
+                ORDER BY last_seen DESC
+                LIMIT 15
+                """,
+                (app_id, app_id),
             ).fetchall()
 
             frontend_hosts = [d["host"] for d in domains if d["classification"] == "frontend"]
@@ -855,11 +1114,13 @@ class Store:
                 "javascript_obfuscation_signals": sorted(set(js_obfuscation_signals))[:20],
                 "redirect_count": len(redirects),
                 "redirect_targets": sorted({r["target_host"] for r in redirects if r["target_host"]}),
+                "recent_pages": [dict(x) for x in recent_pages],
+                "recent_endpoints": [dict(x) for x in recent_endpoints],
                 # Backward-compatible fields from the basic version.
                 "observed_hosts": sorted({d["host"] for d in domains}),
                 "endpoint_count": len(endpoints),
                 "high_value_endpoints": [
-                    f"{e['method']} {e['normalized_path']}"
+                    f"{e['host']} {e['method']} {e['normalized_path']}"
                     for e in endpoints
                     if int(e["risk_score"] or 0) >= 4
                 ][:10],

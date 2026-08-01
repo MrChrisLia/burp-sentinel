@@ -13,6 +13,7 @@ Implements the backend-first roadmap from the project plan:
 from __future__ import annotations
 
 import json
+import re
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -140,6 +141,35 @@ def delete_scope(scope_name: str) -> dict:
     return {"deleted": True, "scope_name": name}
 
 
+class HostsScopeRequest(BaseModel):
+    hosts: list[str]
+    in_scope: bool = True
+    exclusive: bool = False
+
+
+@app.get("/scopes/{scope_name}/hosts")
+def scope_hosts_get(scope_name: str) -> dict:
+    """Saved per-host filter for a scope (host, classification, in_scope)."""
+    name = scope_name.strip()
+    return {"scope_name": name, "hosts": store.list_hosts(name)}
+
+
+@app.post("/scopes/{scope_name}/hosts")
+def scope_hosts(scope_name: str, body: HostsScopeRequest) -> dict:
+    """Mark hosts in/out of scope. Out-of-scope hosts are excluded from
+    summaries, chat context, and quest generation (rows are kept, reversible).
+    With exclusive=true the given list is treated as the full in-scope set:
+    every other host of the scope is flipped to the opposite flag."""
+    name = scope_name.strip()
+    updated = store.set_hosts_in_scope(
+        name,
+        [h.strip().lower() for h in body.hosts if h.strip()],
+        body.in_scope,
+        exclusive=body.exclusive,
+    )
+    return {"updated": updated, "scope_name": name, "in_scope": body.in_scope, "exclusive": body.exclusive}
+
+
 @app.post("/analyze-request")
 def analyze_request(body: AnalyzeRequest) -> dict:
     result = analyzer.analyze(
@@ -205,6 +235,26 @@ def proxy_import(body: ProxyImportRequest) -> dict:
         classification = endpoint_classifier.classify_host(req, resp)
         store.record_domain(body.scope_name, req.get("host", ""), classification, confidence="medium")
         store.record_relationship(body.scope_name, endpoint_classifier.relationship_from_headers(req, resp))
+
+        if resp.get("title"):
+            store.record_page_title(
+                body.scope_name,
+                req.get("host", ""),
+                req.get("path", ""),
+                resp["title"],
+            )
+
+        store.record_traffic(
+            body.scope_name,
+            host=req.get("host", ""),
+            method=req.get("method", ""),
+            path=req.get("path", "/"),
+            query_string=",".join(req.get("query_params", [])),
+            status_code=resp.get("status_code"),
+            content_type=resp.get("content_type", ""),
+            request_raw=item.request,
+            response_raw=item.response or "",
+        )
 
         normalized_path = parser.normalize_path(req.get("path", ""))
         is_new = store.record_endpoint(
@@ -338,6 +388,110 @@ def save_evidence(body: EvidenceRequest) -> dict:
     return {"saved": True, "evidence_id": evidence_id}
 
 
+_HOST_RE = re.compile(r"(?:https?://)?(?:[a-z0-9-]+\.)+[a-z]{2,}", re.I)
+
+_PATH_HINT_RE = re.compile(r"[\w./-]+\.(?:js|json|php|html?|xml|txt|css|env|conf|config|ya?ml|ini|log|bak|sql|py|rb|go)\b", re.I)
+_SLASH_PATH_RE = re.compile(r"/[A-Za-z0-9_./-]{2,}")
+
+
+def _extract_path_hint(message: str) -> str | None:
+    """Pull a file/path the user is asking about (e.g. 'config.js', '/api/x')."""
+    m = _PATH_HINT_RE.search(message)
+    if m:
+        return m.group(0).strip("'\",.;:!?")
+    m = _SLASH_PATH_RE.search(message)
+    if m:
+        return m.group(0).strip("'\",.;:!?")
+    return None
+
+
+_TRAFFIC_ITEM_CAP = 6_000
+_TRAFFIC_TOTAL_CAP = 40_000
+
+_SECRET_PATTERNS = [
+    (r"\bsk-[A-Za-z0-9_-]{16,}\b", "OpenAI-style API key"),
+    (r"\bAKIA[0-9A-Z]{16}\b", "AWS access key"),
+    (r"\bAIza[0-9A-Za-z_-]{30,}\b", "Google API key"),
+    (r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b", "Slack token"),
+    (r"\bgh[pousr]_[A-Za-z0-9]{20,}\b", "GitHub token"),
+    (r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b", "JWT"),
+    (r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", "private key block"),
+    (r"(?i)(?:api[_-]?key|apikey|secret|access[_-]?token|auth[_-]?token|password)\s*[:=]\s*[\"'][^\"']{8,}[\"']", "credential assignment"),
+]
+
+
+def _scan_secrets(blocks: list[str]) -> list[str]:
+    """Deterministic regex scan over the traffic blocks for common secret shapes."""
+    found: list[str] = []
+    seen: set[str] = set()
+    for block in blocks:
+        for pattern, label in _SECRET_PATTERNS:
+            for m in re.finditer(pattern, block):
+                snippet = m.group(0)
+                if len(snippet) > 90:
+                    snippet = snippet[:45] + "..." + snippet[-20:]
+                key = f"{label}:{snippet}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                found.append(f"{label}: {snippet}")
+    return found[:15]
+
+
+def _build_traffic_blocks(scope_name: str, focus_host: str | None, message: str) -> tuple[str, list[str]]:
+    """Fetch relevant request/response pairs and render them for the prompt."""
+    path_hint = _extract_path_hint(message)
+    items = store.search_traffic(
+        scope_name,
+        host=focus_host,
+        path_contains=path_hint,
+        limit=8 if path_hint else 6,
+    )
+    if not items:
+        return "", []
+    blocks: list[str] = []
+    total = 0
+    for it in items:
+        head = (
+            f"--- {it['method']} {it['host']}{it['path']} "
+            f"(HTTP {it['status_code'] or '?'}, {it['content_type'] or 'unknown'}, "
+            f"seen {it['seen_count']}x, last {it['last_seen']}) ---"
+        )
+        req = it["request"] or "(no request captured)"
+        if len(req) > 1_500:
+            req = req[:1_500] + "\n...[request truncated]..."
+        resp = it["response"]
+        if not resp:
+            resp = "(no response body captured)" if it["binary_response"] else "(no response captured)"
+        else:
+            if len(resp) > _TRAFFIC_ITEM_CAP:
+                resp = resp[:_TRAFFIC_ITEM_CAP] + "\n...[response truncated]..."
+            resp = "--- RESPONSE ---\n" + resp
+        block = f"{head}\n--- REQUEST ---\n{req}\n{resp}"
+        if total + len(block) > _TRAFFIC_TOTAL_CAP:
+            break
+        blocks.append(block)
+        total += len(block)
+    text = "\n\n".join(blocks)
+    return text, blocks
+
+
+def _resolve_focus_host(scope_name: str, message: str) -> str | None:
+    """Host the user is asking about: one mentioned in the message, or the
+    most recently browsed in-scope host."""
+    for m in _HOST_RE.finditer(message):
+        host = m.group(0).lower()
+        if host.startswith("http://"):
+            host = host[7:]
+        elif host.startswith("https://"):
+            host = host[8:]
+        if host.startswith("www."):
+            host = host[4:]
+        if host and store.host_context(scope_name, host):
+            return host
+    return store.most_recent_host(scope_name)
+
+
 @app.post("/chat")
 def chat(body: ChatRequest) -> dict:
     scope_name = body.scope_name.strip()
@@ -349,14 +503,55 @@ def chat(body: ChatRequest) -> dict:
 
     context = store.summary(scope_name)
     context_json = json.dumps(context, ensure_ascii=True)
+
+    focus_host = _resolve_focus_host(scope_name, message)
+    focus_section = ""
+    if focus_host:
+        host_data = store.host_context(scope_name, focus_host)
+        if host_data:
+            focus_section = (
+                "\n\nFOCUS HOST — the user is asking about this host: "
+                + json.dumps(host_data, ensure_ascii=True)
+                + "\nIf the question concerns a page, endpoints, or the site "
+                "they were just browsing, answer ONLY from this FOCUS HOST data. "
+                "Do not use other hosts' endpoints, pages, or features in the answer."
+            )
+
+    traffic_text, traffic_blocks = _build_traffic_blocks(scope_name, focus_host, message)
+    traffic_section = ""
+    if traffic_text:
+        traffic_section = (
+            "\n\nCAPTURED REQUEST/RESPONSE BLOCKS (from the user's proxied traffic, "
+            "sensitive headers redacted):\n" + traffic_text
+        )
+        secret_hits = _scan_secrets(traffic_blocks)
+        if secret_hits:
+            traffic_section += (
+                "\n\nAUTOMATIC SECRET SCAN — deterministic regex matches found in the blocks above:\n"
+                + "\n".join(f"- {h}" for h in secret_hits)
+                + "\nVerify each hit by reading the blocks; report exact locations (file/endpoint)."
+            )
+
     system_prompt = (
         "You are Hermes, a web application security copilot inside Burp Suite. "
-        "Answer concisely, be technically correct, and ground answers in scope context. "
+        "Answer concisely, be technically correct, and ground answers in the provided scope context. "
+        "The user browses sites through the Burp proxy; recent_pages lists the most recently viewed "
+        "pages (newest first) and every endpoint is labeled with its host. "
+        "IMPORTANT: when the user asks about a specific site, page, or host (or about what they "
+        "just browsed), answer ONLY from that host's data — never mix data from different hosts, "
+        "and never substitute another host's endpoints or pages. "
+        "When CAPTURED REQUEST/RESPONSE BLOCKS are present and the user asks about a file or endpoint "
+        "(e.g. 'config.js', 'that endpoint'), read the blocks and answer from their actual content: "
+        "quote hardcoded credentials, secrets, dangerous sinks, debug flags, or suspicious config "
+        "values with the exact file/endpoint they came from. If the blocks do not contain what the "
+        "user asked about, say so explicitly instead of guessing. "
         "If context is missing, say what traffic/scope data is needed."
     )
     user_prompt = (
         f"Scope: {scope_name}\n"
-        f"Scope summary JSON:\n{context_json}\n\n"
+        f"Scope summary JSON:\n{context_json}\n"
+        f"{focus_section}"
+        f"{traffic_section}\n\n"
         f"Question:\n{message}"
     )
     answer = get_provider().chat(system_prompt, user_prompt)

@@ -19,7 +19,7 @@ class OpenAICompatibleProvider(LLMProvider):
         self.base_url = (settings.base_url or "").strip().rstrip("/")
         self.model = (settings.model or "").strip()
         self.api_key = (settings.api_key or "").strip()
-        self.timeout = 20.0
+        self.timeout = 75.0
 
     def complete(self, prompt: str) -> str:
         return self.chat(

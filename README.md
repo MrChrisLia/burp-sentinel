@@ -138,15 +138,16 @@ gradle clean jar
 cd ..
 ```
 
-Jar:
-`burp-extension/build/libs/hermes-burp-sync-0.1.0.jar`
+JAR path:
+
+`burp-extension/build/libs/hermes-burp-sync-0.2.0.jar`
 
 ## 7) Load Extension In Burp
 
 1. Burp -> `Extensions` -> `Installed` -> `Add`
 2. Type: `Java`
-3. Select: `burp-extension/build/libs/hermes-burp-sync-0.1.0.jar`
-4. Open tab: `Hermes Insights`
+3. Select: `burp-extension/build/libs/hermes-burp-sync-0.2.0.jar`
+4. Open extension tab: `Hermes Insights`
 5. Set `Hermes Backend` to `http://localhost:8000`
 
 ## 8) First Workflow In Burp
@@ -253,11 +254,49 @@ Fix:
 ### Chat returns `404 Not Found` on `/chat/completions`
 
 Usually:
-1. Wrong model ID for selected proxy provider
-2. Wrong provider selected when starting proxy
+1. Wrong model name for the selected proxy provider.
+2. Wrong provider selected when starting proxy.
 
-Important:
-`hermes proxy start --provider nous` uses Nous Portal models.
+Important: `hermes proxy start --provider nous` uses **Nous Portal** credentials/models, not your OpenRouter model picker.
+
+Quick checks:
+
+```bash
+hermes proxy status
+curl -sS http://127.0.0.1:8645/v1/models
+```
+
+Then set `HERMES_MODEL` to an ID returned by `/v1/models`.
+
+If you want OpenRouter-specific models, do not use `--provider nous` unless that model is actually available there.
+
+### Chat fails with `account balance is too low` / `requires available credits`
+
+This means the request reached the **Nous Portal** with an account that has no
+credits. `hermes proxy start --provider nous` authenticates against the Nous
+Portal OAuth account (`~/.hermes/auth.json`) — **not** your DeepSeek/OpenRouter
+API key. If you pay for a different provider, the proxy will still fail with
+this error because it is billing the Portal account.
+
+Fix: skip the proxy and point the backend at the provider you actually pay for
+(OpenAI-compatible):
+
+```bash
+HERMES_PROVIDER=openai_compatible
+HERMES_BASE_URL=https://api.deepseek.com/
+HERMES_MODEL=deepseek-v4-flash
+HERMES_API_KEY=<your real provider key>
+```
+
+Restart uvicorn from the repo root, then confirm via `/health` that
+`base_url`/`model` show your provider (not `127.0.0.1:8645`) before testing
+chat in Burp. If you do want Portal models instead, add credits at
+https://portal.nousresearch.com for the account used by `hermes login --provider nous`.
+
+### Chat fails with `HTTP 0` and `I/O timeout`
+
+This means Burp reached the Hermes backend, but the chat response took too long.
+Large/slow models or temporary provider latency can trigger this.
 
 Checks:
 

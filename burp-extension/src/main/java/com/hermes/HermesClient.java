@@ -87,6 +87,34 @@ public class HermesClient {
         return request("DELETE", endpoint, null);
     }
 
+    public ApiResult getScopeHosts(String baseUrl, String scopeName) {
+        String encodedScope = URLEncoder.encode(scopeName, StandardCharsets.UTF_8).replace("+", "%20");
+        String endpoint = stripTrailingSlash(baseUrl) + "/scopes/" + encodedScope + "/hosts";
+        return request("GET", endpoint, null, 15_000);
+    }
+
+    public ApiResult setIncludedHosts(String baseUrl, String scopeName, List<String> hosts) {
+        if (baseUrl.isEmpty() || scopeName.isEmpty() || hosts.isEmpty()) {
+            return new ApiResult(false, 0, "Missing baseUrl/scopeName/hosts", false);
+        }
+        StringBuilder hostsJson = new StringBuilder("[");
+        for (int i = 0; i < hosts.size(); i++) {
+            if (i > 0) {
+                hostsJson.append(",");
+            }
+            hostsJson.append("\"").append(JsonUtil.escape(hosts.get(i))).append("\"");
+        }
+        hostsJson.append("]");
+        String payload = "{"
+                + "\"hosts\":" + hostsJson + ","
+                + "\"in_scope\":true,"
+                + "\"exclusive\":true"
+                + "}";
+        String encodedScope = URLEncoder.encode(scopeName, StandardCharsets.UTF_8).replace("+", "%20");
+        String endpoint = stripTrailingSlash(baseUrl) + "/scopes/" + encodedScope + "/hosts";
+        return request("POST", endpoint, payload, 15_000);
+    }
+
     public ApiResult analyzeRequest(
             String baseUrl,
             String scopeName,

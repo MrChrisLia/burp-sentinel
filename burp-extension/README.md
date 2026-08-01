@@ -11,13 +11,13 @@ gradle clean jar
 
 Output JAR:
 
-`build/libs/hermes-burp-sync-0.1.0.jar`
+`build/libs/hermes-burp-sync-0.2.0.jar`
 
 ## Load in Burp
 
 1. `Extensions` -> `Installed` -> `Add`
 2. Type: `Java`
-3. Select `build/libs/hermes-burp-sync-0.1.0.jar`
+3. Select `build/libs/hermes-burp-sync-0.2.0.jar`
 4. Open Burp tab `Hermes Sync`
 
 ## Configure

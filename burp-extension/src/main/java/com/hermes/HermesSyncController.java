@@ -35,8 +35,10 @@ import java.awt.Font;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -291,6 +293,7 @@ public class HermesSyncController {
                 rule.include = include;
                 return rule;
             });
+            pushHostRulesToBackend();
         });
 
         hostTable.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
@@ -404,6 +407,7 @@ public class HermesSyncController {
         }
         refreshHostTable();
         log("Included only hosts visible in filter. Excluded all others.");
+        pushHostRulesToBackend();
     }
 
     private void setFilteredHostsIncluded(boolean include) {
@@ -423,6 +427,7 @@ public class HermesSyncController {
         }
         refreshHostTable();
         log((include ? "Included" : "Excluded") + " hosts visible in current filter.");
+        pushHostRulesToBackend();
     }
 
     private void setAllHostsIncluded(boolean include) {
@@ -434,6 +439,7 @@ public class HermesSyncController {
         }
         refreshHostTable();
         log((include ? "Included" : "Excluded") + " all known hosts.");
+        pushHostRulesToBackend();
     }
 
     private void syncOnceSafe() {
@@ -703,8 +709,46 @@ public class HermesSyncController {
             if (selected != null) {
                 setCurrentScope(String.valueOf(selected));
                 log("Loaded scope: " + selected);
+                applySavedHostRules(String.valueOf(selected));
             }
         });
+    }
+
+    /** Restore the saved per-host filter for a scope into the host table so
+     * the UI and the backend agree on what is in scope. Hosts not present in
+     * the saved filter are unchecked (excluded). */
+    private void applySavedHostRules(String scope) {
+        String baseUrl = backendField.getText().trim();
+        if (baseUrl.isEmpty() || scope.isEmpty()) {
+            return;
+        }
+        HermesClient.ApiResult result = client.getScopeHosts(baseUrl, scope);
+        if (!result.success()) {
+            log("Failed to load saved domain filter (HTTP " + result.statusCode() + ").");
+            return;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\"host\"\\s*:\\s*\"([^\"]+)\"[^}]*?\"in_scope\"\\s*:\\s*(\\d+)")
+                .matcher(result.body());
+        Set<String> saved = new HashSet<>();
+        while (m.find()) {
+            String host = m.group(1).toLowerCase();
+            boolean include = "1".equals(m.group(2));
+            saved.add(host);
+            hostRules.compute(host, (k, v) -> {
+                HostRule rule = v == null ? new HostRule() : v;
+                rule.include = include;
+                return rule;
+            });
+        }
+        // Everything not in the saved filter is out of scope for this scope.
+        for (Map.Entry<String, HostRule> entry : hostRules.entrySet()) {
+            if (!saved.contains(entry.getKey())) {
+                entry.getValue().include = false;
+            }
+        }
+        refreshHostTable();
+        log("Loaded saved domain filter for scope \"" + scope + "\" (" + saved.size() + " host(s)).");
     }
 
     private void createScopeInteractive() {
@@ -756,6 +800,7 @@ public class HermesSyncController {
             }
             log(actionName + " complete: " + scope);
             setInsights("Scope ready: " + scope + "\n\nYou can now sync traffic into this scope.");
+            pushHostRulesToBackend();
         } else {
             if (result.rateLimited()) {
                 handleRateLimit(actionName, result.body());
@@ -960,6 +1005,7 @@ public class HermesSyncController {
         }
         refreshHostTable();
         log("Domain list refreshed. Known hosts=" + hostRules.size());
+        pushHostRulesToBackend();
     }
 
     private void setSelectedHostsIncluded(boolean include) {
@@ -1005,6 +1051,30 @@ public class HermesSyncController {
         }
         HostRule rule = hostRules.get(host);
         return rule == null || rule.include;
+    }
+
+    /** Mirror the extension's domain filter to the backend: the in-scope set
+     * is exactly the currently included hosts. Called whenever the user
+     * changes inclusion (checkbox, filter actions, refresh, scope creation). */
+    private void pushHostRulesToBackend() {
+        String baseUrl = backendField.getText().trim();
+        String scope = currentScope();
+        if (baseUrl.isEmpty() || scope.isEmpty() || hostRules.isEmpty()) {
+            return;
+        }
+        List<String> included = new ArrayList<>();
+        for (Map.Entry<String, HostRule> entry : hostRules.entrySet()) {
+            if (entry.getValue().include) {
+                included.add(entry.getKey());
+            }
+        }
+        if (included.isEmpty()) {
+            return;
+        }
+        HermesClient.ApiResult result = client.setIncludedHosts(baseUrl, scope, included);
+        if (!result.success()) {
+            log("Failed to push domain filter to backend (HTTP " + result.statusCode() + ").");
+        }
     }
 
     private void refreshHostTable() {

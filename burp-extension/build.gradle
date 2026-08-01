@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'com.hermes'
-version = '0.1.0'
+version = '0.2.0'
 
 // Keep this Gradle file compatible with both older and newer Gradle versions.
 def javaExt = extensions.findByName('java')
