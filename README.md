@@ -278,8 +278,9 @@ Portal OAuth account (`~/.hermes/auth.json`) — **not** your DeepSeek/OpenRoute
 API key. If you pay for a different provider, the proxy will still fail with
 this error because it is billing the Portal account.
 
-Fix: skip the proxy and point the backend at the provider you actually pay for
-(OpenAI-compatible):
+Fix: skip the proxy and point the backend at the provider you actually pay for.
+Edit the repo-root `.env` (the file the backend reads at startup) to these
+OpenAI-compatible values, then restart uvicorn:
 
 ```bash
 HERMES_PROVIDER=openai_compatible
