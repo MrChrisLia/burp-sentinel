@@ -61,54 +61,25 @@ cp .env.example .env
 ```
 
 Then choose one runtime mode.
-### Hermes proxy mode (real model)
 
-1. Start proxy in another terminal:
+### Mock mode (no external model)
 
-```bash
-hermes proxy start
-```
+Keep `HERMES_PROVIDER=mock`. Chat returns deterministic mock responses — useful for offline testing.
 
-Optional:
+### Real model mode (OpenAI-compatible provider, e.g. DeepSeek)
 
-```bash
-hermes proxy start --provider nous --host 127.0.0.1 --port 8645
-```
-
-2. Verify proxy:
+The backend calls the LLM provider directly — no proxy or gateway required. Set `.env`:
 
 ```bash
-hermes proxy status
-hermes proxy providers
+HERMES_PROVIDER=openai_compatible
+HERMES_BASE_URL=https://api.deepseek.com/
+HERMES_MODEL=deepseek-v4-flash
+HERMES_API_KEY=sk-************************************
 ```
 
-List model IDs:
-
-```bash
-curl -sS http://127.0.0.1:8645/v1/models | jq -r '.data[].id'
-```
-
-3. Set `.env`:
-
-```bash
-HERMES_PROVIDER=hermes_agent
-HERMES_BASE_URL=http://127.0.0.1:8645/v1
-HERMES_MODEL=EXACT_MODEL_ID_FROM_V1_MODELS
-HERMES_API_KEY=
-```
-
-Example `.env` (filled):
-
-```bash
-HERMES_PROVIDER=hermes_agent
-HERMES_BASE_URL=http://127.0.0.1:8645/v1
-HERMES_MODEL=openai/gpt-4o-mini
-HERMES_API_KEY=sk-or-v1-********************************abcd
-```
-
-Notes:
-- Use the exact host/port from your proxy command if you changed defaults.
-- `HERMES_MODEL` must be an exact model ID returned by `/v1/models`.
+Any OpenAI-compatible endpoint works (DeepSeek, OpenRouter, etc.): point
+`HERMES_BASE_URL` at it and set `HERMES_MODEL` to a model ID that provider
+accepts. The API key is your own key for that provider.
 
 ## 5) Start Backend
 
@@ -125,10 +96,10 @@ In another terminal, verify:
 curl -sS http://localhost:8000/health
 ```
 
-For proxy mode, confirm `/health` shows:
-- `"provider": "hermes_agent"`
-- `"base_url": "http://127.0.0.1:8645/v1"` (or your custom proxy URL)
-- `"model": "YOUR_MODEL_ID"`
+Confirm `/health` shows:
+- `"provider": "openai_compatible"`
+- `"base_url": "https://api.deepseek.com/"` (or your provider base URL)
+- `"model": "deepseek-v4-flash"` (or your model)
 
 ## 6) Build Burp Extension
 
@@ -186,20 +157,6 @@ Skill format reference:
 
 ## 11) Troubleshooting
 
-### `hermes proxy` only prints usage/help
-
-Use:
-
-```bash
-hermes proxy start
-```
-
-Not:
-
-```bash
-hermes proxy
-```
-
 ### No `.jar` after clone
 
 Expected. Build in `burp-extension`:
@@ -254,83 +211,33 @@ Fix:
 ### Chat returns `404 Not Found` on `/chat/completions`
 
 Usually:
-1. Wrong model name for the selected proxy provider.
-2. Wrong provider selected when starting proxy.
+1. Wrong model name for the selected provider.
+2. Provider base URL not reachable.
 
-Important: `hermes proxy start --provider nous` uses **Nous Portal** credentials/models, not your OpenRouter model picker.
-
-Quick checks:
-
-```bash
-hermes proxy status
-curl -sS http://127.0.0.1:8645/v1/models
-```
-
-Then set `HERMES_MODEL` to an ID returned by `/v1/models`.
-
-If you want OpenRouter-specific models, do not use `--provider nous` unless that model is actually available there.
+Fix: set `HERMES_MODEL` in the repo-root `.env` to a model ID your provider
+accepts, then restart uvicorn and re-check `/health`.
 
 ### Chat fails with `account balance is too low` / `requires available credits`
 
-This means the request reached the **Nous Portal** with an account that has no
-credits. `hermes proxy start --provider nous` authenticates against the Nous
-Portal OAuth account (`~/.hermes/auth.json`) — **not** your DeepSeek/OpenRouter
-API key. If you pay for a different provider, the proxy will still fail with
-this error because it is billing the Portal account.
-
-Fix: skip the proxy and point the backend at the provider you actually pay for.
-Edit the repo-root `.env` (the file the backend reads at startup) to these
-OpenAI-compatible values, then restart uvicorn:
-
-```bash
-HERMES_PROVIDER=openai_compatible
-HERMES_BASE_URL=https://api.deepseek.com/
-HERMES_MODEL=deepseek-v4-flash
-HERMES_API_KEY=<your real provider key>
-```
-
-Restart uvicorn from the repo root, then confirm via `/health` that
-`base_url`/`model` show your provider (not `127.0.0.1:8645`) before testing
-chat in Burp. If you do want Portal models instead, add credits at
-https://portal.nousresearch.com for the account used by `hermes login --provider nous`.
+This error comes from the LLM provider rejecting the request for missing
+credits. If the backend is pointed at an endpoint/account you do not pay for
+(e.g. a portal-style endpoint), switch `HERMES_BASE_URL` and `HERMES_API_KEY`
+in the repo-root `.env` to the provider you actually pay for (see section 4),
+then restart uvicorn and re-check `/health`.
 
 ### Chat fails with `HTTP 0` and `I/O timeout`
 
-This means Burp reached the Hermes backend, but the chat response took too long.
-Large/slow models or temporary provider latency can trigger this.
+This means Burp reached the Hermes backend, but the chat response took too
+long. Large/slow reasoning models or temporary provider latency can trigger
+this — first answers on big scopes can take 20-60 seconds.
 
 Checks:
 
-```bash
-hermes proxy status
-```
-
-Then list available model IDs:
-
-```bash
-curl -sS http://127.0.0.1:8645/v1/models | jq -r '.data[].id'
-```
-
-Set `HERMES_MODEL` to a model ID returned by `/v1/models`.
-
-Example:
-
-```text
-Hermes: LLM summary unavailable: provider call failed
-(http://127.0.0.1:8645/v1/chat/completions: HTTP 404:
-{"status":404,"message":"Model 'openai/gpt-5.3-codex' requires available credits. Your account balance is too low to use paid models ..."}
-...)
-```
-
-Meaning:
-- The selected model is paid for the current proxy provider/account.
-- ChatGPT subscription login does not automatically grant provider API credits for proxy calls.
-- This can happen even if you try `openrouter/owl-alpha`; treat that as a model suggestion only and verify it is available/usable in your `/v1/models` + current billing path.
-
-Fix:
-1. Pick a free model from `/v1/models`, or
-2. Add credits to the provider account used by the proxy.
-
-### Chat fails with `HTTP 0` and `I/O timeout`
-
-This means backend was reachable, but response took too long.
+1. Backend is still alive while chat is running:
+   ```bash
+   curl -sS http://localhost:8000/health
+   ```
+2. Retry with a short prompt.
+3. If it consistently times out, the model is too slow for the provider —
+   switch `HERMES_MODEL` to a faster model in the repo-root `.env` and restart
+   the backend.
