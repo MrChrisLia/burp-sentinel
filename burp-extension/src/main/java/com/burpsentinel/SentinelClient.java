@@ -19,6 +19,8 @@ public class SentinelClient {
         this.api = api;
     }
 
+    private static final int IMPORT_READ_TIMEOUT_MS = 60_000;
+
     public SyncResult sendProxyImport(String baseUrl, String scopeName, List<SentinelSyncController.CapturedItem> items) {
         if (baseUrl.isEmpty() || scopeName.isEmpty() || items.isEmpty()) {
             return new SyncResult(false, "Missing baseUrl/scopeName/items", 0, false);
@@ -31,7 +33,7 @@ public class SentinelClient {
         try {
             HttpURLConnection conn = (HttpURLConnection) URI.create(endpoint).toURL().openConnection();
             conn.setConnectTimeout(3000);
-            conn.setReadTimeout(8000);
+            conn.setReadTimeout(IMPORT_READ_TIMEOUT_MS);
             conn.setRequestMethod("POST");
             conn.setDoOutput(true);
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");

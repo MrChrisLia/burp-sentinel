@@ -118,13 +118,13 @@ gradle clean jar
 cd ..
 ```
 
-JAR: `burp-extension/build/libs/burp-sentinel-0.5.0.jar`
+JAR: `burp-extension/build/libs/burp-sentinel-0.6.0.jar`
 
 ### 6. Load the extension in Burp
 
 1. Burp -> `Extensions` -> `Installed` -> `Add`
 2. Type: `Java`
-3. Select: `burp-extension/build/libs/burp-sentinel-0.5.0.jar`
+3. Select: `burp-extension/build/libs/burp-sentinel-0.6.0.jar`
 4. Open the `Sentinel Insights` tab
 5. Set `Sentinel Backend` to `http://localhost:8000`
 
