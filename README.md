@@ -19,6 +19,9 @@ No proxy service, no gateway, no external account plumbing: the backend calls
 the LLM provider of your choice (DeepSeek, OpenRouter, ...) with your own API
 key. All captured traffic stays in a local SQLite database.
 
+New here? Read [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for a plain-English
+walkthrough of the whole flow.
+
 ## Features
 
 - **Scope = domain filter.** The extension's Domains/Subdomains panel defines
