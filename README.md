@@ -118,13 +118,13 @@ gradle clean jar
 cd ..
 ```
 
-JAR: `burp-extension/build/libs/burp-sentinel-0.4.0.jar`
+JAR: `burp-extension/build/libs/burp-sentinel-0.5.0.jar`
 
 ### 6. Load the extension in Burp
 
 1. Burp -> `Extensions` -> `Installed` -> `Add`
 2. Type: `Java`
-3. Select: `burp-extension/build/libs/burp-sentinel-0.4.0.jar`
+3. Select: `burp-extension/build/libs/burp-sentinel-0.5.0.jar`
 4. Open the `Sentinel Insights` tab
 5. Set `Sentinel Backend` to `http://localhost:8000`
 
@@ -133,16 +133,20 @@ JAR: `burp-extension/build/libs/burp-sentinel-0.4.0.jar`
 ### First workflow
 
 1. In the extension scope menu, run `Create Scope`
-2. Browse your target through the Burp Proxy (the extension syncs traffic automatically)
-3. Run `View App Summary` and `Generate Quests`
+2. Browse your target through the Burp Proxy
+3. Capture traffic: tick `Auto Sync Running` in the extension (automatic
+   scanning of everything that passes the proxy), or right-click specific
+   requests and choose **Send to Sentinel**
+4. Run `View App Summary` and `Generate Quests`
 
 ### Sending traffic manually
 
 Right-click any request in the Proxy history (or anywhere else Burp shows
 selected requests) and choose **Send to Sentinel** — the selected
 request/response pairs go straight into the current scope through the same
-pipeline as auto-sync. Handy for targeted capture: untick `Auto Sync Running`
-in the extension and send only what you care about.
+pipeline as auto-sync. Auto-sync is **off by default**; tick `Auto Sync
+Running` in the extension to re-enable the full passive scanning (JS
+analysis, page titles, secret scanning) on everything that passes the proxy.
 
 ### Domain filtering (read this — it defines what the AI sees)
 

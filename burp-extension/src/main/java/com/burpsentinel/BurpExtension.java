@@ -11,6 +11,6 @@ public class BurpExtension implements burp.api.montoya.BurpExtension {
         api.userInterface().registerSuiteTab("Sentinel Insights", controller.ui());
 
         controller.start();
-        api.logging().logToOutput("Sentinel Security Insights initialized. Auto-sync is ON.");
+        api.logging().logToOutput("Sentinel Security Insights initialized. Auto-sync is OFF by default — tick 'Auto Sync Running' in the tab or use right-click 'Send to Sentinel'.");
     }
 }

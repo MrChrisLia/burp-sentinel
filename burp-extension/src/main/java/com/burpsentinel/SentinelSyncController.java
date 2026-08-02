@@ -93,7 +93,7 @@ public class SentinelSyncController {
         this.intervalField = new JTextField("3", 4);
         this.domainFilterField = new JTextField("", 18);
         this.includeExistingBox = new JCheckBox("Sync Existing History On Start", true);
-        this.runningBox = new JCheckBox("Auto Sync Running", true);
+        this.runningBox = new JCheckBox("Auto Sync Running", false);
         this.logs = new JTextArea();
         this.logs.setEditable(false);
         this.logs.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));

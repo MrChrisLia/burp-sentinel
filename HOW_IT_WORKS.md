@@ -26,10 +26,12 @@ your machine.
    opening a fresh notebook.
 
 2. **Browse the target.** You browse the site through Burp (you're doing this
-   anyway). The extension quietly syncs: every page, every API call, every JS
-   file gets stored. It also grabs useful bits: page titles, endpoint paths,
-   whether something looks like an API, whether JS files contain suspicious
-   strings.
+   anyway). Capture happens two ways: tick **Auto Sync Running** in the
+   extension and it quietly records every page, API call, and JS file that
+   passes the proxy; or right-click specific requests and choose
+   **Send to Sentinel** to record only those. Either way it grabs useful
+   bits: page titles, endpoint paths, whether something looks like an API,
+   whether JS files contain suspicious strings.
 
 3. **Decide what matters.** In the extension's `Domains / Subdomains` panel
    you check the boxes for the hosts you care about and uncheck the noise
