@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from hermes_api import parser
+from sentinel_api import parser
 
 _STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
 _ID_PARAM_HINTS = (

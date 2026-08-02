@@ -10,8 +10,8 @@ from typing import Any
 
 import httpx
 
-from hermes_api.config import settings
-from hermes_api.providers.base import LLMProvider
+from sentinel_api.config import settings
+from sentinel_api.providers.base import LLMProvider
 
 
 class OpenAICompatibleProvider(LLMProvider):
@@ -30,7 +30,7 @@ class OpenAICompatibleProvider(LLMProvider):
     def chat(self, system_prompt: str, user_prompt: str) -> str:
         if not self.base_url or not self.model:
             return (
-                "LLM summary unavailable: configure HERMES_BASE_URL and HERMES_MODEL "
+                "LLM summary unavailable: configure SENTINEL_BASE_URL and SENTINEL_MODEL "
                 "for openai_compatible provider."
             )
         payload = {

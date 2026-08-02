@@ -1,4 +1,4 @@
-package com.hermes;
+package com.burpsentinel;
 
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.proxy.ProxyHttpRequestResponse;
@@ -44,11 +44,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public class HermesSyncController {
+public class SentinelSyncController {
     private static final long IDLE_SYNC_SUPPRESS_MS = 60_000L;
 
     private final MontoyaApi api;
-    private final HermesClient client;
+    private final SentinelClient client;
     private final ScheduledExecutorService scheduler;
 
     private final JPanel panel;
@@ -76,9 +76,9 @@ public class HermesSyncController {
     private volatile boolean syncSuppressedForIdle = false;
     private volatile boolean started = false;
 
-    public HermesSyncController(MontoyaApi api) {
+    public SentinelSyncController(MontoyaApi api) {
         this.api = api;
-        this.client = new HermesClient(api);
+        this.client = new SentinelClient(api);
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
         this.hostRules = new ConcurrentHashMap<>();
 
@@ -162,7 +162,7 @@ public class HermesSyncController {
 
         JPanel config = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         config.setBorder(BorderFactory.createTitledBorder("Connection & Scope"));
-        config.add(new JLabel("Hermes Backend"));
+        config.add(new JLabel("Sentinel Backend"));
         config.add(backendField);
         config.add(new JLabel("Current Scope"));
         currentScopeValue.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 8));
@@ -241,10 +241,10 @@ public class HermesSyncController {
         hostPanel.add(new JScrollPane(hostTable), BorderLayout.CENTER);
 
         JScrollPane insightsPane = new JScrollPane(insights);
-        insightsPane.setBorder(BorderFactory.createTitledBorder("Hermes Insights"));
+        insightsPane.setBorder(BorderFactory.createTitledBorder("Sentinel Insights"));
 
         JPanel chatPanel = new JPanel(new BorderLayout(6, 6));
-        chatPanel.setBorder(BorderFactory.createTitledBorder("Hermes Chat"));
+        chatPanel.setBorder(BorderFactory.createTitledBorder("Sentinel Chat"));
         JScrollPane chatScroll = new JScrollPane(chatTranscript);
         chatPanel.add(chatScroll, BorderLayout.CENTER);
 
@@ -453,7 +453,7 @@ public class HermesSyncController {
             syncOnce();
         } catch (Exception e) {
             log("Sync error: " + e.getMessage());
-            api.logging().logToError("Hermes sync error", e);
+            api.logging().logToError("Sentinel sync error", e);
         }
     }
 
@@ -513,7 +513,7 @@ public class HermesSyncController {
             return;
         }
 
-        HermesClient.SyncResult result = client.sendProxyImport(
+        SentinelClient.SyncResult result = client.sendProxyImport(
                 backendField.getText().trim(),
                 currentScope(),
                 pending
@@ -582,7 +582,7 @@ public class HermesSyncController {
             return;
         }
 
-        HermesClient.SyncResult result = client.sendProxyImport(
+        SentinelClient.SyncResult result = client.sendProxyImport(
                 backendField.getText().trim(),
                 currentScope(),
                 batch.pending()
@@ -599,7 +599,7 @@ public class HermesSyncController {
     }
 
     private void fetchAppSummary() {
-        HermesClient.ApiResult result = client.getAppSummary(backendField.getText().trim(), currentScope());
+        SentinelClient.ApiResult result = client.getAppSummary(backendField.getText().trim(), currentScope());
         if (result.success()) {
             setInsights(InsightsFormatter.appSummary(result.body()));
             log("Loaded app summary.");
@@ -620,7 +620,7 @@ public class HermesSyncController {
     }
 
     private void generateAndViewQuests() {
-        HermesClient.ApiResult result = client.generateQuests(backendField.getText().trim(), currentScope());
+        SentinelClient.ApiResult result = client.generateQuests(backendField.getText().trim(), currentScope());
         if (result.success()) {
             setInsights(InsightsFormatter.generatedQuests(result.body()));
             log("Generated quests.");
@@ -656,7 +656,7 @@ public class HermesSyncController {
             return;
         }
 
-        HermesClient.ApiResult result = client.analyzeRequest(
+        SentinelClient.ApiResult result = client.analyzeRequest(
                 backendField.getText().trim(),
                 currentScope(),
                 roleField.getText().trim(),
@@ -678,7 +678,7 @@ public class HermesSyncController {
     }
 
     private void loadExistingScope() {
-        HermesClient.ApiResult result = client.listScopes(backendField.getText().trim());
+        SentinelClient.ApiResult result = client.listScopes(backendField.getText().trim());
         if (!result.success()) {
             if (result.rateLimited()) {
                 handleRateLimit("Load Scope", result.body());
@@ -722,7 +722,7 @@ public class HermesSyncController {
         if (baseUrl.isEmpty() || scope.isEmpty()) {
             return;
         }
-        HermesClient.ApiResult result = client.getScopeHosts(baseUrl, scope);
+        SentinelClient.ApiResult result = client.getScopeHosts(baseUrl, scope);
         if (!result.success()) {
             log("Failed to load saved domain filter (HTTP " + result.statusCode() + ").");
             return;
@@ -793,7 +793,7 @@ public class HermesSyncController {
         if (scope.isEmpty()) {
             return;
         }
-        HermesClient.ApiResult result = client.createScope(backendField.getText().trim(), scope);
+        SentinelClient.ApiResult result = client.createScope(backendField.getText().trim(), scope);
         if (result.success()) {
             if (switchToScope) {
                 setCurrentScope(scope);
@@ -812,7 +812,7 @@ public class HermesSyncController {
     }
 
     private void deleteScopeInteractive() {
-        HermesClient.ApiResult listResult = client.listScopes(backendField.getText().trim());
+        SentinelClient.ApiResult listResult = client.listScopes(backendField.getText().trim());
         if (!listResult.success()) {
             if (listResult.rateLimited()) {
                 handleRateLimit("Delete Scope", listResult.body());
@@ -848,7 +848,7 @@ public class HermesSyncController {
 
         int confirm = JOptionPane.showConfirmDialog(
                 panel,
-                "Delete scope \"" + scope + "\" and all its Hermes data?",
+                "Delete scope \"" + scope + "\" and all its Sentinel data?",
                 "Delete Scope",
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE
@@ -857,7 +857,7 @@ public class HermesSyncController {
             return;
         }
 
-        HermesClient.ApiResult result = client.deleteScope(backendField.getText().trim(), scope);
+        SentinelClient.ApiResult result = client.deleteScope(backendField.getText().trim(), scope);
         if (result.success()) {
             log("Deleted scope: " + scope);
             if (scope.equals(currentScope())) {
@@ -887,7 +887,7 @@ public class HermesSyncController {
     }
 
     private void handleRateLimit(String action, String details) {
-        String banner = "RATE LIMIT: Hermes or its provider returned a rate-limit response.";
+        String banner = "RATE LIMIT: Sentinel or its provider returned a rate-limit response.";
         log(banner + " Action=" + action + ". Back off and retry later.");
         setInsights(
                 "Rate Limit Encountered\n"
@@ -913,16 +913,16 @@ public class HermesSyncController {
         chatInput.setText("");
         setChatSending(true);
         runInBackground(() -> {
-            HermesClient.ApiResult result = client.chat(backend, scope, message);
+            SentinelClient.ApiResult result = client.chat(backend, scope, message);
             if (result.success()) {
                 String answer = extractJsonStringValue(result.body(), "answer");
                 if (answer.isEmpty()) {
                     answer = result.body();
                 }
-                appendChatLine("Hermes", answer);
+                appendChatLine("Sentinel", answer);
                 log("Chat reply received.");
             } else {
-                appendChatLine("Hermes", "Chat request failed: HTTP " + result.statusCode() + ". " + result.body());
+                appendChatLine("Sentinel", "Chat request failed: HTTP " + result.statusCode() + ". " + result.body());
                 if (result.rateLimited()) {
                     handleRateLimit("Chat", result.body());
                 } else {
@@ -934,7 +934,7 @@ public class HermesSyncController {
     }
 
     private void runInBackground(Runnable task) {
-        new Thread(task, "hermes-ui-action").start();
+        new Thread(task, "sentinel-ui-action").start();
     }
 
     private void syncOnceManual() {
@@ -942,7 +942,7 @@ public class HermesSyncController {
             syncOnce();
         } catch (Exception e) {
             log("Manual sync before summary failed: " + e.getMessage());
-            api.logging().logToError("Hermes manual sync error", e);
+            api.logging().logToError("Sentinel manual sync error", e);
         }
     }
 
@@ -1071,7 +1071,7 @@ public class HermesSyncController {
         if (included.isEmpty()) {
             return;
         }
-        HermesClient.ApiResult result = client.setIncludedHosts(baseUrl, scope, included);
+        SentinelClient.ApiResult result = client.setIncludedHosts(baseUrl, scope, included);
         if (!result.success()) {
             log("Failed to push domain filter to backend (HTTP " + result.statusCode() + ").");
         }

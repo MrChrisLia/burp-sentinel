@@ -1,5 +1,5 @@
 ---
-id: HERMES-IDOR-001
+id: SENTINEL-IDOR-001
 name: IDOR/BOLA Deep Check
 description: Prioritize object-level authorization checks on ID-like routes and parameters.
 confidence: high

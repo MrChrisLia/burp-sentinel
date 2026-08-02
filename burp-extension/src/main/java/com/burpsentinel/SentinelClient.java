@@ -1,4 +1,4 @@
-package com.hermes;
+package com.burpsentinel;
 
 import burp.api.montoya.MontoyaApi;
 
@@ -12,14 +12,14 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-public class HermesClient {
+public class SentinelClient {
     private final MontoyaApi api;
 
-    public HermesClient(MontoyaApi api) {
+    public SentinelClient(MontoyaApi api) {
         this.api = api;
     }
 
-    public SyncResult sendProxyImport(String baseUrl, String scopeName, List<HermesSyncController.CapturedItem> items) {
+    public SyncResult sendProxyImport(String baseUrl, String scopeName, List<SentinelSyncController.CapturedItem> items) {
         if (baseUrl.isEmpty() || scopeName.isEmpty() || items.isEmpty()) {
             return new SyncResult(false, "Missing baseUrl/scopeName/items", 0, false);
         }
@@ -47,11 +47,11 @@ public class HermesClient {
                 return new SyncResult(true, "ok", code, false);
             }
             String responseText = readBody(conn);
-            String msg = "Hermes /proxy/import returned HTTP " + code + formatRetryAfter(conn) + ": " + truncate(responseText);
+            String msg = "Sentinel /proxy/import returned HTTP " + code + formatRetryAfter(conn) + ": " + truncate(responseText);
             api.logging().logToError(msg);
             return new SyncResult(false, msg, code, isRateLimited(code, responseText));
         } catch (IOException e) {
-            api.logging().logToError("Hermes /proxy/import request failed", e);
+            api.logging().logToError("Sentinel /proxy/import request failed", e);
             return new SyncResult(false, "I/O error: " + e.getMessage(), 0, false);
         }
     }

@@ -14,7 +14,7 @@ from threading import Lock
 from typing import Iterator
 from urllib.parse import urlparse
 
-from hermes_api import parser
+from sentinel_api import parser
 
 
 class Store:
@@ -1080,7 +1080,7 @@ class Store:
             if not domains and not endpoints:
                 app_summary = (
                     "No traffic has been analyzed yet for this scope. "
-                    "Capture requests in Burp and sync/import them to Hermes."
+                    "Capture requests in Burp and sync/import them to Sentinel."
                 )
             elif features:
                 app_summary = (
@@ -1147,10 +1147,10 @@ class Store:
 
 
 def _default_db_path() -> str:
-    env = os.getenv("HERMES_DB_PATH", "").strip()
+    env = os.getenv("SENTINEL_DB_PATH", "").strip()
     if env:
         return env
-    return os.path.join(os.path.dirname(__file__), "data", "hermes.sqlite")
+    return os.path.join(os.path.dirname(__file__), "data", "sentinel.sqlite")
 
 
 store = Store(_default_db_path())

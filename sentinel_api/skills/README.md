@@ -1,15 +1,15 @@
-# Hermes Markdown Skills
+# Sentinel Markdown Skills
 
-Hermes can load custom skills from Markdown files in this directory.
+Sentinel can load custom skills from Markdown files in this directory.
 
 Default directory:
 
-- `/app/hermes_api/skills` inside Docker
-- `/Users/christopher/HermesWorkspace/Projects/Hermes Burpsuite Agent/hermes_api/skills` on host
+- `/app/sentinel_api/skills` inside Docker
+- `/Users/christopher/SentinelWorkspace/Projects/Sentinel Burpsuite Agent/sentinel_api/skills` on host
 
 Override path with:
 
-- `HERMES_SKILLS_DIR=/some/path`
+- `SENTINEL_SKILLS_DIR=/some/path`
 
 ## Skill File Format
 
@@ -17,7 +17,7 @@ Each `*.md` file must start with YAML frontmatter:
 
 ```md
 ---
-id: HERMES-CUSTOM-001
+id: SENTINEL-CUSTOM-001
 name: Admin Export Abuse Checks
 description: Prioritize authz testing on export/admin routes.
 confidence: medium

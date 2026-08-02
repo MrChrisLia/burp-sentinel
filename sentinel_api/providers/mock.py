@@ -5,7 +5,7 @@ short natural-language endpoint summary. It echoes the method/path it sees.
 """
 import re
 
-from hermes_api.providers.base import LLMProvider
+from sentinel_api.providers.base import LLMProvider
 
 
 class MockProvider(LLMProvider):
@@ -21,8 +21,8 @@ class MockProvider(LLMProvider):
         if question:
             q = question[-1].strip()
             if q:
-                return f"[mock] Hermes chat is enabled. Question received: {q}"
-        return "[mock] Hermes chat is enabled, but no question text was provided."
+                return f"[mock] Sentinel chat is enabled. Question received: {q}"
+        return "[mock] Sentinel chat is enabled, but no question text was provided."
 
 
 def _find(text: str, pattern: str) -> str:

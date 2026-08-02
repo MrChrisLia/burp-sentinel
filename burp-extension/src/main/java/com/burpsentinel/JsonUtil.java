@@ -1,18 +1,18 @@
-package com.hermes;
+package com.burpsentinel;
 
 import java.util.List;
 
 public final class JsonUtil {
     private JsonUtil() {}
 
-    public static String proxyImportPayload(String scopeName, List<HermesSyncController.CapturedItem> items) {
+    public static String proxyImportPayload(String scopeName, List<SentinelSyncController.CapturedItem> items) {
         StringBuilder sb = new StringBuilder();
         sb.append('{');
         sb.append("\"scope_name\":\"").append(escape(scopeName)).append("\",");
         sb.append("\"items\":[");
 
         for (int i = 0; i < items.size(); i++) {
-            HermesSyncController.CapturedItem it = items.get(i);
+            SentinelSyncController.CapturedItem it = items.get(i);
             if (i > 0) {
                 sb.append(',');
             }

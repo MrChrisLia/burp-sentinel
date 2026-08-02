@@ -1,4 +1,4 @@
-"""Provider interface. The rest of Hermes only depends on this."""
+"""Provider interface. The rest of Sentinel only depends on this."""
 
 
 class LLMProvider:

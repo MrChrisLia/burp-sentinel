@@ -24,4 +24,4 @@ burp-extension/build/
 **/.gradle/
 
 # Local runtime DB
-hermes_api/data/*.sqlite
+sentinel_api/data/*.sqlite

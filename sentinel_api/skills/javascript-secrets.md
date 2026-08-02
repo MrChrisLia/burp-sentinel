@@ -1,5 +1,5 @@
 ---
-id: HERMES-JS-SECRET-001
+id: SENTINEL-JS-SECRET-001
 name: JavaScript Secret Exposure Drill
 description: Validate and triage potential credential/key exposure in JavaScript bundles.
 confidence: high
@@ -13,4 +13,4 @@ tasks:
   - Revoke/rotate confirmed active credentials and document impact.
 ---
 
-Use when Hermes detects potential hardcoded keys/tokens/secrets from JavaScript responses.
+Use when Sentinel detects potential hardcoded keys/tokens/secrets from JavaScript responses.

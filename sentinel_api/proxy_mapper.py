@@ -13,7 +13,7 @@ import re
 from typing import Iterable
 from urllib.parse import urlparse
 
-from hermes_api import parser
+from sentinel_api import parser
 
 _ROUTE_PATTERN = re.compile(
     r"(?:https?://[a-zA-Z0-9._:-]+(?:/[a-zA-Z0-9._~!$&()*+,;=:@%/-]*)?|"

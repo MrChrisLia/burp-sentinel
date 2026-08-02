@@ -11,11 +11,11 @@ import os
 import re
 from functools import lru_cache
 
-from hermes_api import markdown_skills
+from sentinel_api import markdown_skills
 
 
 def _catalog_path() -> str:
-    env = os.getenv("HERMES_WSTG_CHECKLIST_PATH", "").strip()
+    env = os.getenv("SENTINEL_WSTG_CHECKLIST_PATH", "").strip()
     if env:
         return env
     return os.path.join(os.path.dirname(__file__), "data", "wstg_checklist.json")
@@ -161,8 +161,8 @@ def recommend_for_request(req: dict, resp: dict | None = None, js_findings: list
             {
                 "id": skill["id"],
                 "name": skill["name"],
-                "category_id": "HERMES-SKILL",
-                "category_name": "Hermes Custom Skill",
+                "category_id": "SENTINEL-SKILL",
+                "category_name": "Sentinel Custom Skill",
                 "reference": "",
                 "objectives": skill.get("tasks", [])[:3],
                 "rationale": skill.get("rationale") or skill.get("description") or "Matched custom markdown skill trigger.",
@@ -250,8 +250,8 @@ def recommend_for_snapshot(snapshot: dict, limit: int = 12) -> list[dict]:
         merged = {
             "id": rid,
             "name": skill.get("name", rid),
-            "category_id": "HERMES-SKILL",
-            "category_name": "Hermes Custom Skill",
+            "category_id": "SENTINEL-SKILL",
+            "category_name": "Sentinel Custom Skill",
             "reference": "",
             "objectives": (skill.get("tasks", []) or [])[:3],
             "rationale": skill.get("rationale") or skill.get("description") or "Matched custom markdown skill trigger.",

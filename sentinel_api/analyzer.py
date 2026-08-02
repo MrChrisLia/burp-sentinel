@@ -10,10 +10,10 @@ import os
 
 import yaml
 
-from hermes_api import parser
-from hermes_api import endpoint_classifier
-from hermes_api import wstg_skills
-from hermes_api.providers import get_provider
+from sentinel_api import parser
+from sentinel_api import endpoint_classifier
+from sentinel_api import wstg_skills
+from sentinel_api.providers import get_provider
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 _PLAYBOOKS_DIR = os.path.join(os.path.dirname(__file__), "playbooks")

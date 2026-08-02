@@ -1,4 +1,4 @@
-"""Hermes backend.
+"""Sentinel backend.
 
 Implements the backend-first roadmap from the project plan:
 - /health
@@ -18,19 +18,19 @@ import re
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from hermes_api import analyzer
-from hermes_api import endpoint_classifier
-from hermes_api import parser
-from hermes_api import proxy_mapper
-from hermes_api import quest_generator
-from hermes_api import wstg_skills
-from hermes_api import markdown_skills
-from hermes_api.config import settings
-from hermes_api.evidence import normalize_confidence
-from hermes_api.providers import get_provider
-from hermes_api.storage import store
+from sentinel_api import analyzer
+from sentinel_api import endpoint_classifier
+from sentinel_api import parser
+from sentinel_api import proxy_mapper
+from sentinel_api import quest_generator
+from sentinel_api import wstg_skills
+from sentinel_api import markdown_skills
+from sentinel_api.config import settings
+from sentinel_api.evidence import normalize_confidence
+from sentinel_api.providers import get_provider
+from sentinel_api.storage import store
 
-app = FastAPI(title="Hermes Web App Navigator", version="0.2.0")
+app = FastAPI(title="Sentinel Web App Navigator", version="0.3.0")
 
 
 class AnalyzeRequest(BaseModel):
@@ -533,7 +533,7 @@ def chat(body: ChatRequest) -> dict:
             )
 
     system_prompt = (
-        "You are Hermes, a web application security copilot inside Burp Suite. "
+        "You are Sentinel, a web application security copilot inside Burp Suite. "
         "Answer concisely, be technically correct, and ground answers in the provided scope context. "
         "The user browses sites through the Burp proxy; recent_pages lists the most recently viewed "
         "pages (newest first) and every endpoint is labeled with its host. "

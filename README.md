@@ -1,10 +1,10 @@
-# Hermes Security Insights (Local Setup)
+# Sentinel Security Insights (Local Setup)
 
 This project runs locally.
 
 It includes:
 - A local backend at `http://localhost:8000`
-- A Hermes proxy for model access
+- A Sentinel proxy for model access
 - A Burp extension that syncs Proxy traffic into that backend
 
 ## 1) Install System Prerequisites
@@ -15,8 +15,8 @@ You need:
 - Gradle
 - Burp Suite
 
-Hermes download/install page:
-- [Hermes Agent Installation](https://hermes-agent.nousresearch.com/docs/getting-started/installation)
+Sentinel download/install page:
+- [Sentinel Agent Installation](https://sentinel-agent.nousresearch.com/docs/getting-started/installation)
 
 Example (Ubuntu/Debian):
 
@@ -40,8 +40,8 @@ gradle -v
 ## 2) Clone Repository
 
 ```bash
-git clone https://github.com/MrChrisLia/hermes-burpsuite-agent.git
-cd hermes-burpsuite-agent
+git clone https://github.com/MrChrisLia/burp-sentinel.git
+cd burp-sentinel
 ```
 
 ## 3) Install Python Dependencies
@@ -64,21 +64,21 @@ Then choose one runtime mode.
 
 ### Mock mode (no external model)
 
-Keep `HERMES_PROVIDER=mock`. Chat returns deterministic mock responses — useful for offline testing.
+Keep `SENTINEL_PROVIDER=mock`. Chat returns deterministic mock responses — useful for offline testing.
 
 ### Real model mode (OpenAI-compatible provider, e.g. DeepSeek)
 
 The backend calls the LLM provider directly — no proxy or gateway required. Set `.env`:
 
 ```bash
-HERMES_PROVIDER=openai_compatible
-HERMES_BASE_URL=https://api.deepseek.com/
-HERMES_MODEL=deepseek-v4-flash
-HERMES_API_KEY=sk-************************************
+SENTINEL_PROVIDER=openai_compatible
+SENTINEL_BASE_URL=https://api.deepseek.com/
+SENTINEL_MODEL=deepseek-v4-flash
+SENTINEL_API_KEY=sk-************************************
 ```
 
 Any OpenAI-compatible endpoint works (DeepSeek, OpenRouter, etc.): point
-`HERMES_BASE_URL` at it and set `HERMES_MODEL` to a model ID that provider
+`SENTINEL_BASE_URL` at it and set `SENTINEL_MODEL` to a model ID that provider
 accepts. The API key is your own key for that provider.
 
 ## 5) Start Backend
@@ -87,7 +87,7 @@ After the `.env` is setup, start the backend:
 
 ```bash
 source .venv/bin/activate
-uvicorn hermes_api.main:app --host 0.0.0.0 --port 8000
+uvicorn sentinel_api.main:app --host 0.0.0.0 --port 8000
 ```
 
 In another terminal, verify:
@@ -111,15 +111,15 @@ cd ..
 
 JAR path:
 
-`burp-extension/build/libs/hermes-burp-sync-0.2.0.jar`
+`burp-extension/build/libs/burp-sentinel-0.3.0.jar`
 
 ## 7) Load Extension In Burp
 
 1. Burp -> `Extensions` -> `Installed` -> `Add`
 2. Type: `Java`
-3. Select: `burp-extension/build/libs/hermes-burp-sync-0.2.0.jar`
-4. Open extension tab: `Hermes Insights`
-5. Set `Hermes Backend` to `http://localhost:8000`
+3. Select: `burp-extension/build/libs/burp-sentinel-0.3.0.jar`
+4. Open extension tab: `Sentinel Insights`
+5. Set `Sentinel Backend` to `http://localhost:8000`
 
 ## 8) First Workflow In Burp
 
@@ -129,9 +129,9 @@ JAR path:
    - `View App Summary`
    - `Generate Quests`
 
-## 9) Use Hermes Chat In Burp
+## 9) Use Sentinel Chat In Burp
 
-The `Hermes Insights` tab includes a `Hermes Chat` panel.
+The `Sentinel Insights` tab includes a `Sentinel Chat` panel.
 
 1. Keep backend running.
 2. Load/create the correct scope.
@@ -150,10 +150,10 @@ curl -sS 'http://localhost:8000/skills?refresh=true'
 ```
 
 Custom markdown skills directory:
-`hermes_api/skills`
+`sentinel_api/skills`
 
 Skill format reference:
-`hermes_api/skills/README.md`
+`sentinel_api/skills/README.md`
 
 ## 11) Troubleshooting
 
@@ -195,7 +195,7 @@ If `model` is empty/wrong, backend config is wrong.
 Fix:
 1. Verify repo-root `.env`:
    ```bash
-   grep -n '^HERMES_' .env
+   grep -n '^SENTINEL_' .env
    ```
 2. Check for duplicate `.env` files:
    ```bash
@@ -203,8 +203,8 @@ Fix:
    ```
 3. Fully restart backend from repo root:
    ```bash
-   pkill -f "uvicorn hermes_api.main:app" || true
-   uvicorn hermes_api.main:app --host 0.0.0.0 --port 8000
+   pkill -f "uvicorn sentinel_api.main:app" || true
+   uvicorn sentinel_api.main:app --host 0.0.0.0 --port 8000
    ```
 4. Re-check `/health` and only then test Burp chat.
 
@@ -214,20 +214,20 @@ Usually:
 1. Wrong model name for the selected provider.
 2. Provider base URL not reachable.
 
-Fix: set `HERMES_MODEL` in the repo-root `.env` to a model ID your provider
+Fix: set `SENTINEL_MODEL` in the repo-root `.env` to a model ID your provider
 accepts, then restart uvicorn and re-check `/health`.
 
 ### Chat fails with `account balance is too low` / `requires available credits`
 
 This error comes from the LLM provider rejecting the request for missing
 credits. If the backend is pointed at an endpoint/account you do not pay for
-(e.g. a portal-style endpoint), switch `HERMES_BASE_URL` and `HERMES_API_KEY`
+(e.g. a portal-style endpoint), switch `SENTINEL_BASE_URL` and `SENTINEL_API_KEY`
 in the repo-root `.env` to the provider you actually pay for (see section 4),
 then restart uvicorn and re-check `/health`.
 
 ### Chat fails with `HTTP 0` and `I/O timeout`
 
-This means Burp reached the Hermes backend, but the chat response took too
+This means Burp reached the Sentinel backend, but the chat response took too
 long. Large/slow reasoning models or temporary provider latency can trigger
 this — first answers on big scopes can take 20-60 seconds.
 
@@ -239,5 +239,5 @@ Checks:
    ```
 2. Retry with a short prompt.
 3. If it consistently times out, the model is too slow for the provider —
-   switch `HERMES_MODEL` to a faster model in the repo-root `.env` and restart
+   switch `SENTINEL_MODEL` to a faster model in the repo-root `.env` and restart
    the backend.

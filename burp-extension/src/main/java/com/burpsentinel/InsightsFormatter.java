@@ -1,4 +1,4 @@
-package com.hermes;
+package com.burpsentinel;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,7 +50,7 @@ public final class InsightsFormatter {
 
     public static String generatedQuests(String json) {
         StringBuilder out = new StringBuilder();
-        out.append("Hermes Generated Quests\n");
+        out.append("Sentinel Generated Quests\n");
         out.append("======================\n\n");
 
         List<QuestBlock> quests = questBlocks(json);
@@ -75,7 +75,7 @@ public final class InsightsFormatter {
 
     public static String analyzedRequest(String json) {
         StringBuilder out = new StringBuilder();
-        out.append("Hermes Request Analysis\n");
+        out.append("Sentinel Request Analysis\n");
         out.append("=======================\n\n");
 
         out.append("Endpoint Summary:\n");

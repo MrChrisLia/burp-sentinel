@@ -3,7 +3,7 @@
 Skill files are Markdown with YAML frontmatter. Example:
 
 ---
-id: HERMES-CUSTOM-001
+id: SENTINEL-CUSTOM-001
 name: Admin Export Abuse Checks
 confidence: medium
 rationale: Admin/export endpoints observed.
@@ -28,7 +28,7 @@ import yaml
 
 
 def _skills_dir() -> str:
-    env = os.getenv("HERMES_SKILLS_DIR", "").strip()
+    env = os.getenv("SENTINEL_SKILLS_DIR", "").strip()
     if env:
         return env
     return os.path.join(os.path.dirname(__file__), "skills")
