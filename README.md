@@ -1,22 +1,47 @@
-# Sentinel Security Insights (Local Setup)
+# Burp Sentinel
 
-This project runs locally.
+An AI security copilot that lives inside Burp Suite. It watches the traffic
+you proxy, keeps a structured model of your target (domains, endpoints,
+features, JS findings), and lets you ask an LLM questions grounded in that
+captured traffic — all locally.
 
-It includes:
-- A local backend at `http://localhost:8000`
-- A Sentinel proxy for model access
-- A Burp extension that syncs Proxy traffic into that backend
+```
+Burp Suite ──syncs proxy traffic──▶ Sentinel backend (FastAPI, localhost:8000)
+     ▲                                    │
+     │        chat / summaries / quests   │ reads/writes
+     └────────────────────────────────────┘        │
+                                          local SQLite (sentinel.sqlite)
+                                          └─ calls your LLM provider directly
+                                             (any OpenAI-compatible API)
+```
 
-## 1) Install System Prerequisites
+No proxy service, no gateway, no external account plumbing: the backend calls
+the LLM provider of your choice (DeepSeek, OpenRouter, ...) with your own API
+key. All captured traffic stays in a local SQLite database.
 
-You need:
+## Features
+
+- **Scope = domain filter.** The extension's Domains/Subdomains panel defines
+  what is in scope. The filter is pushed to the backend, so the AI only ever
+  sees the hosts you included. `Load Scope` restores a saved filter; deleting a
+  scope removes all of its data.
+- **App summary.** Hosts classified (frontend / API / asset / third-party),
+  endpoints with risk scores, business objects, roles, JS findings, and WSTG
+  test recommendations.
+- **Quests.** Auto-generated, WSTG-aligned testing checklists for the scope.
+- **Chat grounded in traffic.** Answers are built from the scope summary plus
+  the actual captured traffic: page titles, recent pages, and raw
+  request/response blocks. A deterministic regex scan flags API keys, JWTs,
+  tokens, and credential assignments inside the captured bodies.
+- **Skills.** Markdown skills with trigger rules that match traffic evidence
+  and feed into recommendations and quest generation.
+
+## Requirements
+
 - Python 3.10+
 - Java 17+
 - Gradle
 - Burp Suite
-
-Sentinel download/install page:
-- [Sentinel Agent Installation](https://sentinel-agent.nousresearch.com/docs/getting-started/installation)
 
 Example (Ubuntu/Debian):
 
@@ -25,26 +50,18 @@ sudo apt update
 sudo apt install -y python3 python3-venv python3-pip python3-uvicorn openjdk-17-jdk gradle
 ```
 
-Why this step exists:
-- Installs system tools (`python3`, `java`, `gradle`, etc.).
-- Does not install this project’s Python packages.
+Verify: `python3 --version`, `java -version`, `gradle -v`.
 
-Verify:
+## Quick Start
 
-```bash
-python3 --version
-java -version
-gradle -v
-```
-
-## 2) Clone Repository
+### 1. Clone
 
 ```bash
 git clone https://github.com/MrChrisLia/burp-sentinel.git
 cd burp-sentinel
 ```
 
-## 3) Install Python Dependencies
+### 2. Install Python dependencies
 
 ```bash
 python3 -m venv .venv
@@ -52,23 +69,17 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 4) Configure `.env`
-
-Create from template:
+### 3. Configure `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-Then choose one runtime mode.
+Two runtime modes:
 
-### Mock mode (no external model)
-
-Keep `SENTINEL_PROVIDER=mock`. Chat returns deterministic mock responses — useful for offline testing.
-
-### Real model mode (OpenAI-compatible provider, e.g. DeepSeek)
-
-The backend calls the LLM provider directly — no proxy or gateway required. Set `.env`:
+- **Mock mode** — `SENTINEL_PROVIDER=mock`. Chat returns deterministic mock
+  responses; useful for testing the pipeline offline.
+- **Real model mode** — any OpenAI-compatible provider. Example (DeepSeek):
 
 ```bash
 SENTINEL_PROVIDER=openai_compatible
@@ -77,31 +88,26 @@ SENTINEL_MODEL=deepseek-v4-flash
 SENTINEL_API_KEY=sk-************************************
 ```
 
-Any OpenAI-compatible endpoint works (DeepSeek, OpenRouter, etc.): point
-`SENTINEL_BASE_URL` at it and set `SENTINEL_MODEL` to a model ID that provider
-accepts. The API key is your own key for that provider.
+`SENTINEL_MODEL` must be a model ID your provider accepts. The API key is your
+own key for that provider.
 
-## 5) Start Backend
-
-After the `.env` is setup, start the backend:
+### 4. Start the backend
 
 ```bash
 source .venv/bin/activate
 uvicorn sentinel_api.main:app --host 0.0.0.0 --port 8000
 ```
 
-In another terminal, verify:
+Verify:
 
 ```bash
 curl -sS http://localhost:8000/health
 ```
 
-Confirm `/health` shows:
-- `"provider": "openai_compatible"`
-- `"base_url": "https://api.deepseek.com/"` (or your provider base URL)
-- `"model": "deepseek-v4-flash"` (or your model)
+Expected: `"provider": "openai_compatible"`, `"base_url": "https://api.deepseek.com/"`,
+`"model": "deepseek-v4-flash"`.
 
-## 6) Build Burp Extension
+### 5. Build the extension
 
 ```bash
 cd burp-extension
@@ -109,39 +115,57 @@ gradle clean jar
 cd ..
 ```
 
-JAR path:
+JAR: `burp-extension/build/libs/burp-sentinel-0.3.0.jar`
 
-`burp-extension/build/libs/burp-sentinel-0.3.0.jar`
-
-## 7) Load Extension In Burp
+### 6. Load the extension in Burp
 
 1. Burp -> `Extensions` -> `Installed` -> `Add`
 2. Type: `Java`
 3. Select: `burp-extension/build/libs/burp-sentinel-0.3.0.jar`
-4. Open extension tab: `Sentinel Insights`
+4. Open the `Sentinel Insights` tab
 5. Set `Sentinel Backend` to `http://localhost:8000`
 
-## 8) First Workflow In Burp
+## Usage
 
-1. In extension scope menu, run `Create Scope`
-2. Browse target through Burp Proxy
-3. Run:
-   - `View App Summary`
-   - `Generate Quests`
+### First workflow
 
-## 9) Use Sentinel Chat In Burp
+1. In the extension scope menu, run `Create Scope`
+2. Browse your target through the Burp Proxy (the extension syncs traffic automatically)
+3. Run `View App Summary` and `Generate Quests`
 
-The `Sentinel Insights` tab includes a `Sentinel Chat` panel.
+### Domain filtering (read this — it defines what the AI sees)
 
-1. Keep backend running.
-2. Load/create the correct scope.
-3. Enter a question and press `Send` (or Enter).
+The `Domains / Subdomains` panel lists every host seen in proxy history, each
+with an include checkbox. Only included hosts are in scope:
 
-Notes:
-- Chat is scoped to the currently selected scope.
-- Real model answers require working proxy/provider/model config.
+- Type in the `Filter` box to narrow the list, then use the dropdown actions:
+  `Only Include Filter Matches` (excludes everything else), `Include/Exclude
+  Filter Matches`, `Include/Exclude Selected`, `Include/Exclude All`
+- Select a row and press `x` to toggle a single host
+- Every filter change is pushed to the backend: the AI's summaries, chat
+  context, and quests only cover the included hosts
+- `Load Scope` restores the scope's saved filter along with its data
+- New hosts default to *included*; re-apply your filter after a Burp restart
 
-## 10) Skills (WSTG + Custom)
+### Chat
+
+The `Sentinel Chat` panel answers questions about the current scope. It
+resolves which host you mean (a host named in your question, otherwise the
+most recently browsed one) and answers from that host's data.
+
+Good prompts:
+
+- "What is the title of the page I just browsed?"
+- "Can you check what you saw in config.js?"
+- "Can you check what that endpoint is?"
+- "Do you see any API keys or potential vulnerabilities?"
+
+Chat reads the captured request/response blocks (sensitive headers redacted)
+and a deterministic secret scan (OpenAI-style keys, AWS keys, Google keys,
+JWTs, Slack/GitHub tokens, private keys, credential assignments). First
+answers on large scopes can take 20-60 seconds — the model is reasoning.
+
+## Skills (WSTG + custom)
 
 Check loaded skills:
 
@@ -149,95 +173,75 @@ Check loaded skills:
 curl -sS 'http://localhost:8000/skills?refresh=true'
 ```
 
-Custom markdown skills directory:
-`sentinel_api/skills`
+Custom markdown skills live in `sentinel_api/skills` — format reference:
+`sentinel_api/skills/README.md`.
 
-Skill format reference:
-`sentinel_api/skills/README.md`
+## API overview
 
-## 11) Troubleshooting
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/health` | Config + status |
+| GET | `/scopes` | List scopes |
+| POST | `/scopes` | Create a scope |
+| DELETE | `/scopes/{name}` | Delete a scope (removes all its data) |
+| GET/POST | `/scopes/{name}/hosts` | Read / update the per-host filter (`exclusive=true` = the list is the full in-scope set) |
+| POST | `/proxy/import` | Ingest traffic from the extension |
+| GET | `/app-summary/{scope}` | Full summary |
+| POST | `/generate-quests` | Generate quests |
+| POST | `/chat` | Ask the AI about a scope |
+| GET | `/skills` | List loaded skills |
+
+## Project layout
+
+```
+sentinel_api/          Python backend (FastAPI + SQLite)
+  main.py              routes
+  storage.py           SQLite store (scopes, endpoints, traffic, page titles)
+  parser.py            HTTP parsing + redaction
+  providers/           LLM providers (mock, openai_compatible)
+  skills/              custom markdown skills
+burp-extension/        Java extension (Gradle)
+  src/main/java/com/burpsentinel/
+  build/libs/burp-sentinel-*.jar
+```
+
+## Troubleshooting
 
 ### No `.jar` after clone
 
-Expected. Build in `burp-extension`:
-
-```bash
-gradle clean jar
-```
+Expected. Build it: `cd burp-extension && gradle clean jar`.
 
 ### Extension sync fails
 
-Check:
-1. Backend is running on `localhost:8000`
-2. Health endpoint responds:
-   ```bash
-   curl -sS http://localhost:8000/health
-   ```
-3. Burp extension backend URL is exactly `http://localhost:8000`
+1. Backend running on `localhost:8000`? `curl -sS http://localhost:8000/health`
+2. Extension `Sentinel Backend` is exactly `http://localhost:8000`
 
 ### App summary is empty
 
-Usually:
 1. No Burp traffic captured yet
 2. Wrong scope loaded
-3. Relevant hosts are excluded in domain filter
+3. Relevant hosts excluded in the domain filter
 
-### Chat does not use expected model
+### Chat does not use the expected model
 
-Check:
-
-```bash
-curl -sS http://localhost:8000/health
-```
-
-If `model` is empty/wrong, backend config is wrong.
-
-Fix:
-1. Verify repo-root `.env`:
-   ```bash
-   grep -n '^SENTINEL_' .env
-   ```
-2. Check for duplicate `.env` files:
-   ```bash
-   find .. -maxdepth 3 -name .env
-   ```
-3. Fully restart backend from repo root:
-   ```bash
-   pkill -f "uvicorn sentinel_api.main:app" || true
-   uvicorn sentinel_api.main:app --host 0.0.0.0 --port 8000
-   ```
-4. Re-check `/health` and only then test Burp chat.
+`/health` is the source of truth. If `model` is empty/wrong: verify the
+repo-root `.env` (`grep -n '^SENTINEL_' .env`), check for duplicate `.env`
+files, restart the backend, re-check `/health`.
 
 ### Chat returns `404 Not Found` on `/chat/completions`
 
-Usually:
-1. Wrong model name for the selected provider.
-2. Provider base URL not reachable.
+Wrong `SENTINEL_MODEL` for your provider, or the provider base URL is not
+reachable. Set a model ID your provider accepts, restart, re-check `/health`.
 
-Fix: set `SENTINEL_MODEL` in the repo-root `.env` to a model ID your provider
-accepts, then restart uvicorn and re-check `/health`.
+### Chat fails with `account balance is too low`
 
-### Chat fails with `account balance is too low` / `requires available credits`
+The provider rejected the request for missing credits — the backend is
+pointed at an endpoint/account you don't pay for. Switch `SENTINEL_BASE_URL`
+and `SENTINEL_API_KEY` in `.env` to a provider you pay for, restart the
+backend.
 
-This error comes from the LLM provider rejecting the request for missing
-credits. If the backend is pointed at an endpoint/account you do not pay for
-(e.g. a portal-style endpoint), switch `SENTINEL_BASE_URL` and `SENTINEL_API_KEY`
-in the repo-root `.env` to the provider you actually pay for (see section 4),
-then restart uvicorn and re-check `/health`.
+### Chat fails with `HTTP 0` / `I/O timeout`
 
-### Chat fails with `HTTP 0` and `I/O timeout`
-
-This means Burp reached the Sentinel backend, but the chat response took too
-long. Large/slow reasoning models or temporary provider latency can trigger
-this — first answers on big scopes can take 20-60 seconds.
-
-Checks:
-
-1. Backend is still alive while chat is running:
-   ```bash
-   curl -sS http://localhost:8000/health
-   ```
-2. Retry with a short prompt.
-3. If it consistently times out, the model is too slow for the provider —
-   switch `SENTINEL_MODEL` to a faster model in the repo-root `.env` and restart
-   the backend.
+The backend was reachable but the answer took too long (slow reasoning model,
+big scope). Retry with a shorter prompt; if it keeps timing out, switch
+`SENTINEL_MODEL` to a faster model.
