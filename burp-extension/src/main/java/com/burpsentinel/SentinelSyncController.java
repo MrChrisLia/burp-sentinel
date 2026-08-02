@@ -1,7 +1,10 @@
 package com.burpsentinel;
 
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.proxy.ProxyHttpRequestResponse;
+import burp.api.montoya.ui.contextmenu.ContextMenuEvent;
+import burp.api.montoya.ui.contextmenu.ContextMenuItemsProvider;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
@@ -29,6 +32,7 @@ import javax.swing.event.TableModelEvent;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -143,6 +147,7 @@ public class SentinelSyncController {
         }
         started = true;
 
+        registerContextMenu();
         refreshHostsFromHistory();
         lastObservedRequestId = currentMaxId();
         lastNewRequestSeenAtMs = System.currentTimeMillis();
@@ -154,6 +159,51 @@ public class SentinelSyncController {
         }
 
         scheduler.scheduleWithFixedDelay(this::syncOnceSafe, 2, intervalSeconds(), TimeUnit.SECONDS);
+    }
+
+    /** Right-click "Send to Sentinel" in the Proxy history (and anywhere else
+     * Burp exposes selected request/response pairs). */
+    private void registerContextMenu() {
+        api.userInterface().registerContextMenuItemsProvider(new ContextMenuItemsProvider() {
+            @Override
+            public List<Component> provideMenuItems(ContextMenuEvent event) {
+                if (event.selectedRequestResponses().isEmpty()) {
+                    return List.of();
+                }
+                javax.swing.JMenuItem item = new javax.swing.JMenuItem("Send to Sentinel");
+                item.addActionListener(e -> sendSelectionToSentinel(event.selectedRequestResponses()));
+                return List.of(item);
+            }
+        });
+    }
+
+    /** Push explicitly selected requests/responses into the current scope —
+     * same backend import pipeline the auto-sync uses. */
+    private void sendSelectionToSentinel(List<HttpRequestResponse> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        String baseUrl = backendField.getText().trim();
+        String scope = currentScope();
+        if (baseUrl.isEmpty() || scope.isEmpty()) {
+            log("Send to Sentinel: no scope selected. Create/select a scope first.");
+            setInsights("No scope selected.\n\nCreate or load a scope in the Sentinel Insights tab first.");
+            return;
+        }
+        List<CapturedItem> items = new ArrayList<>();
+        for (HttpRequestResponse hrr : messages) {
+            String requestRaw = hrr.request() == null ? "" : hrr.request().toString();
+            String responseRaw = (hrr.hasResponse() && hrr.response() != null) ? hrr.response().toString() : "";
+            items.add(new CapturedItem(requestRaw, responseRaw, "context-menu", ""));
+        }
+        SentinelClient.SyncResult result = client.sendProxyImport(baseUrl, scope, items);
+        if (result.success()) {
+            log("Sent " + items.size() + " item(s) to Sentinel (scope \"" + scope + "\").");
+            pushHostRulesToBackend();
+        } else {
+            log("Send to Sentinel failed (HTTP " + result.statusCode() + ").");
+            setInsights("Failed to send to Sentinel.\n\n" + result.message());
+        }
     }
 
     private JPanel buildUi() {
