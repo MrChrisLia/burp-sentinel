@@ -74,13 +74,11 @@ That's the whole setup: it creates the virtual environment, installs all
 Python dependencies, and creates `.env` from the template if missing. No
 manual venv activation, no Gradle, no Java.
 
-### 3. Set your AI provider key
+### 3. Add your API key
 
-Open `.env` (created by the installer) and pick a runtime mode:
-
-- **Mock mode** — `SENTINEL_PROVIDER=mock`. Chat returns deterministic mock
-  responses; useful for testing the pipeline offline.
-- **Real model mode** — any OpenAI-compatible provider. Example (DeepSeek):
+Open `.env` (created by the installer). It's already configured for a real
+provider (DeepSeek by default) — the **only** thing you need to do is paste
+your API key into `SENTINEL_API_KEY`:
 
 ```bash
 SENTINEL_PROVIDER=openai_compatible
@@ -89,8 +87,12 @@ SENTINEL_MODEL=deepseek-v4-flash
 SENTINEL_API_KEY=sk-************************************
 ```
 
-`SENTINEL_MODEL` must be a model ID your provider accepts. The API key is your
-own key for that provider.
+Get a key at your provider, e.g. DeepSeek: https://platform.deepseek.com ->
+API Keys (OpenRouter works too: https://openrouter.ai/keys).
+
+No key yet? Set `SENTINEL_PROVIDER=mock` instead — chat returns deterministic
+mock responses so you can test the pipeline offline. The start script reminds
+you whenever mock mode or a missing key is detected.
 
 ### 4. Start the backend
 
