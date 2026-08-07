@@ -11,6 +11,8 @@ __pycache__/
 # Build outputs
 burp-extension/build/
 *.jar
+# ...but the prebuilt extension jar is shipped in the repo
+!releases/*.jar
 
 # OS/editor
 .DS_Store

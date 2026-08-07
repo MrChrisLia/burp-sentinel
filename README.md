@@ -42,18 +42,18 @@ walkthrough of the whole flow.
 ## Requirements
 
 - Python 3.10+
-- Java 17+
-- Gradle
 - Burp Suite
 
-Example (Ubuntu/Debian):
+No Java or Gradle needed — a prebuilt extension jar ships in the repo
+(`releases/`). The Java toolchain is only required to rebuild the extension
+from source (see "Build from source").
+
+Ubuntu/Debian:
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip python3-uvicorn openjdk-17-jdk gradle
+sudo apt install -y python3 python3-venv python3-pip
 ```
-
-Verify: `python3 --version`, `java -version`, `gradle -v`.
 
 ## Quick Start
 
@@ -64,21 +64,19 @@ git clone https://github.com/MrChrisLia/burp-sentinel.git
 cd burp-sentinel
 ```
 
-### 2. Install Python dependencies
+### 2. Run the installer
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+./install.sh
 ```
 
-### 3. Configure `.env`
+That's the whole setup: it creates the virtual environment, installs all
+Python dependencies, and creates `.env` from the template if missing. No
+manual venv activation, no Gradle, no Java.
 
-```bash
-cp .env.example .env
-```
+### 3. Set your AI provider key
 
-Two runtime modes:
+Open `.env` (created by the installer) and pick a runtime mode:
 
 - **Mock mode** — `SENTINEL_PROVIDER=mock`. Chat returns deterministic mock
   responses; useful for testing the pipeline offline.
@@ -97,11 +95,11 @@ own key for that provider.
 ### 4. Start the backend
 
 ```bash
-source .venv/bin/activate
-uvicorn sentinel_api.main:app --host 0.0.0.0 --port 8000
+./start.sh
 ```
 
-Verify:
+Keep this terminal open (Ctrl+C stops the server). Verify in another
+terminal:
 
 ```bash
 curl -sS http://localhost:8000/health
@@ -110,23 +108,27 @@ curl -sS http://localhost:8000/health
 Expected: `"provider": "openai_compatible"`, `"base_url": "https://api.deepseek.com/"`,
 `"model": "deepseek-v4-flash"`.
 
-### 5. Build the extension
-
-```bash
-cd burp-extension
-gradle clean jar
-cd ..
-```
-
-JAR: `burp-extension/build/libs/burp-sentinel-0.7.0.jar`
-
-### 6. Load the extension in Burp
+### 5. Load the extension in Burp
 
 1. Burp -> `Extensions` -> `Installed` -> `Add`
 2. Type: `Java`
-3. Select: `burp-extension/build/libs/burp-sentinel-0.7.0.jar`
+3. Select: `releases/burp-sentinel-0.7.0.jar` (prebuilt, included in the repo)
 4. Open the `Sentinel Insights` tab
 5. Set `Sentinel Backend` to `http://localhost:8000`
+
+## Build from source (optional, for developers)
+
+The prebuilt jar is in `releases/` — rebuilding is only needed after code
+changes:
+
+```bash
+cd burp-extension
+gradle clean jar   # requires JDK 17; the bundled Gradle 4.x does not work with newer JDKs
+cd ..
+cp burp-extension/build/libs/burp-sentinel-*.jar releases/
+```
+
+Then reload the jar in Burp.
 
 ## Usage
 
