@@ -26,10 +26,17 @@ echo ">> Installing Python dependencies..."
 if [ ! -f .env ]; then
   cp .env.example .env
   echo ">> Created .env from .env.example"
-  echo "   IMPORTANT: open .env and set SENTINEL_API_KEY to your LLM provider key"
-  echo "   (or keep SENTINEL_PROVIDER=mock to test without a key)."
 else
   echo ">> .env already exists, leaving it untouched."
+fi
+
+if grep -qE '^SENTINEL_API_KEY=[^[:space:]]+' .env 2>/dev/null; then
+  echo ">> .env has an API key configured."
+else
+  echo ">> NOTE: .env has no API key yet."
+  echo "   - Real AI answers: open .env and set SENTINEL_API_KEY to your LLM"
+  echo "     provider key (and SENTINEL_PROVIDER=openai_compatible)."
+  echo "   - No key yet: leave SENTINEL_PROVIDER=mock to test the pipeline offline."
 fi
 
 JAR=$(ls releases/*.jar 2>/dev/null | head -1 || true)
