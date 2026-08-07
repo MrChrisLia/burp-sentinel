@@ -31,7 +31,13 @@ import javax.swing.event.DocumentListener;
 import javax.swing.event.TableModelEvent;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.Style;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
+import javax.swing.JTextPane;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -65,7 +71,7 @@ public class SentinelSyncController {
     private final JCheckBox runningBox;
     private final JTextArea logs;
     private final JTextArea insights;
-    private final JTextArea chatTranscript;
+    private final JTextPane chatTranscript;
     private final JTextField chatInput;
     private final JButton chatSendButton;
 
@@ -79,6 +85,7 @@ public class SentinelSyncController {
     private volatile long lastNewRequestSeenAtMs = System.currentTimeMillis();
     private volatile boolean syncSuppressedForIdle = false;
     private volatile boolean started = false;
+    private volatile int chatPlaceholderOffset = -1;
 
     public SentinelSyncController(MontoyaApi api) {
         this.api = api;
@@ -100,9 +107,10 @@ public class SentinelSyncController {
         this.insights = new JTextArea();
         this.insights.setEditable(false);
         this.insights.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
-        this.chatTranscript = new JTextArea();
+        this.chatTranscript = new JTextPane();
         this.chatTranscript.setEditable(false);
         this.chatTranscript.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 13));
+        this.chatTranscript.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
         this.chatInput = new JTextField(24);
         this.chatSendButton = new JButton("Send");
 
@@ -959,9 +967,10 @@ public class SentinelSyncController {
         }
         String scope = currentScope();
         String backend = backendField.getText().trim();
-        appendChatLine("You", message);
+        appendChatLine("Me", message);
         chatInput.setText("");
         setChatSending(true);
+        appendChatLine("Sentinel", "is thinking…", true);
         runInBackground(() -> {
             SentinelClient.ApiResult result = client.chat(backend, scope, message);
             if (result.success()) {
@@ -1004,11 +1013,44 @@ public class SentinelSyncController {
     }
 
     private void appendChatLine(String speaker, String text) {
+        appendChatLine(speaker, text, false);
+    }
+
+    /** Chatroom-style transcript: user messages right-aligned in blue,
+     * Sentinel messages left-aligned in green. A "thinking" placeholder is
+     * replaced in place when the real reply arrives. */
+    private void appendChatLine(String speaker, String text, boolean thinking) {
         SwingUtilities.invokeLater(() -> {
-            if (!chatTranscript.getText().isEmpty()) {
-                chatTranscript.append("\n");
+            StyledDocument doc = chatTranscript.getStyledDocument();
+            try {
+                boolean isUser = "Me".equals(speaker);
+                // A real reply (or error) replaces the pending placeholder.
+                if (!thinking && !isUser && chatPlaceholderOffset >= 0) {
+                    int off = chatPlaceholderOffset;
+                    chatPlaceholderOffset = -1;
+                    doc.remove(off, doc.getLength() - off);
+                }
+                if (doc.getLength() > 0) {
+                    doc.insertString(doc.getLength(), "\n\n", null);
+                }
+                int start = doc.getLength();
+                String prefix = (isUser ? "Me" : "Sentinel") + ": ";
+                Style label = chatTranscript.addStyle(isUser ? "userLabel" : "aiLabel", null);
+                StyleConstants.setBold(label, true);
+                StyleConstants.setForeground(label, isUser ? new Color(0x1565C0) : new Color(0x2E7D32));
+                Style body = chatTranscript.addStyle(isUser ? "userBody" : (thinking ? "thinkingBody" : "aiBody"), null);
+                StyleConstants.setForeground(body, isUser ? new Color(0x0D47A1) : (thinking ? new Color(0x9E9E9E) : new Color(0x1B5E20)));
+                StyleConstants.setItalic(body, thinking);
+                doc.insertString(start, prefix, label);
+                doc.insertString(doc.getLength(), text, body);
+                Style align = chatTranscript.addStyle(isUser ? "userAlign" : "aiAlign", null);
+                StyleConstants.setAlignment(align, isUser ? StyleConstants.ALIGN_RIGHT : StyleConstants.ALIGN_LEFT);
+                doc.setParagraphAttributes(start, doc.getLength() - start, align, false);
+                if (thinking) {
+                    chatPlaceholderOffset = start;
+                }
+            } catch (BadLocationException ignored) {
             }
-            chatTranscript.append(speaker + ": " + text + "\n");
             chatTranscript.setCaretPosition(chatTranscript.getDocument().getLength());
         });
     }
